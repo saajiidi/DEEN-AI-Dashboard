@@ -143,7 +143,7 @@ def garbage_collect_session_state(clear_data: bool = False):
                 del st.session_state[key]
                 
         # Clean up dynamically generated Data Pilot terminal datasets
-        dynamic_keys = [k for k in st.session_state.keys() if "sql_result" in k]
+        dynamic_keys = [k for k in st.session_state.keys() if isinstance(k, str) and "sql_result" in k]
         for key in dynamic_keys:
             del st.session_state[key]
             
