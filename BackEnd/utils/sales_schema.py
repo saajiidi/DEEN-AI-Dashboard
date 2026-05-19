@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from typing import Iterable
-import re
 import gc
 from BackEnd.core.logging_config import get_logger
 

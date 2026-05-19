@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from FrontEnd.utils.error_handler import log_error, get_logs, DATA_DIR, ERROR_LOG_FILE, PROMPT_DIR, LATEST_PROMPT_FILE
+from FrontEnd.utils.error_handler import log_error, get_logs, ERROR_LOG_FILE
 
 
 class TestErrorHandler(unittest.TestCase):

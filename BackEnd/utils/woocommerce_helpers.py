@@ -15,7 +15,6 @@ from typing import Optional, Union, List, Dict, Any
 from urllib.parse import urlparse
 
 import pandas as pd
-import numpy as np
 from dateutil import parser as date_parser
 
 from BackEnd.core.logging_config import get_logger

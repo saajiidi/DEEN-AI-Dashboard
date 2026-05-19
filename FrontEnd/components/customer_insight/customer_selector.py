@@ -8,8 +8,7 @@ Provides UI for displaying and selecting customers with:
 
 from __future__ import annotations
 
-from typing import Optional, Callable, Dict, Any, List
-from datetime import datetime
+from typing import Optional, Callable, Dict, Any
 
 import streamlit as st
 import pandas as pd
@@ -17,7 +16,6 @@ import pandas as pd
 from BackEnd.utils.woocommerce_helpers import (
     format_currency,
     format_wc_date,
-    calculate_customer_metrics,
     clean_phone,
     clean_email,
 )

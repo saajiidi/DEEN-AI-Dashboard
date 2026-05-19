@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import polars as pl
 import warnings
 from datetime import datetime, timedelta
 
@@ -10,23 +11,42 @@ class FeatureStore:
     
     @staticmethod
     def generate_features(df: pd.DataFrame, target_col: str) -> pd.DataFrame:
-        df = df.copy()
-        # Temporal Features
-        df['day_of_week'] = df.index.dayofweek
-        df['month'] = df.index.month
-        df['is_weekend'] = df['day_of_week'].isin([5, 6]).astype(int)
+        if df.empty:
+            return df
+            
+        idx_name = df.index.name or 'index'
+        df_reset = df.copy().reset_index()
         
-        # Lag Features (1, 7, 14 days)
+        # Convert to Polars LazyFrame for optimized multi-core execution
+        lazy_df = pl.from_pandas(df_reset).lazy()
+        
+        lazy_df = lazy_df.with_columns([
+            # Polars weekday: 1=Mon, 7=Sun. Pandas: 0=Mon, 6=Sun
+            (pl.col(idx_name).dt.weekday() - 1).alias('day_of_week'),
+            pl.col(idx_name).dt.month().alias('month'),
+            pl.col(idx_name).dt.weekday().is_in([6, 7]).cast(pl.Int32).alias('is_weekend')
+        ])
+        
+        # Lag Features
+        lag_exprs = []
         for lag in [1, 7, 14]:
             if len(df) > lag:
-                df[f'lag_{lag}'] = df[target_col].shift(lag)
+                lag_exprs.append(pl.col(target_col).shift(lag).alias(f'lag_{lag}'))
+        if lag_exprs:
+            lazy_df = lazy_df.with_columns(lag_exprs)
         
-        # Rolling Features (7-day window)
+        # Rolling Features
         if len(df) > 7:
-            df['rolling_mean_7'] = df[target_col].shift(1).rolling(window=7).mean()
-            df['rolling_std_7'] = df[target_col].shift(1).rolling(window=7).std()
+            lazy_df = lazy_df.with_columns([
+                pl.col(target_col).shift(1).rolling_mean(window_size=7).alias('rolling_mean_7'),
+                pl.col(target_col).shift(1).rolling_std(window_size=7).alias('rolling_std_7')
+            ])
             
-        return df.fillna(0)
+        # Collect lazy plan and convert back to Pandas for Scikit-Learn
+        result_df = lazy_df.fill_null(0.0).collect().to_pandas()
+        result_df.set_index(idx_name, inplace=True)
+        
+        return result_df
 
 class ForecastingRouter:
     """Smart AutoML Router that selects model suites based on data characteristics."""

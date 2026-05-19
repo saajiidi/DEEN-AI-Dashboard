@@ -1,7 +1,5 @@
 import pandas as pd
-import re
 from datetime import datetime, timedelta
-from typing import Dict, Any, Tuple, Optional
 import requests
 import json
 

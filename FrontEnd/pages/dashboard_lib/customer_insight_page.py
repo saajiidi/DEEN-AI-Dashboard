@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
-from typing import Optional, Dict, Any
+from typing import Dict, Any
 
 import streamlit as st
 import pandas as pd
@@ -16,7 +16,6 @@ import numpy as np
 # Use EXISTING working API components
 from FrontEnd.components.customer_insight.customer_filters import (
     render_customer_filters,
-    apply_customer_filters,
 )
 from FrontEnd.components.customer_insight.customer_selector import (
     render_customer_selector,
@@ -41,7 +40,6 @@ from FrontEnd.utils.key_manager import KeyManager
 
 from FrontEnd.components import ui
 from BackEnd.core.logging_config import get_logger
-from FrontEnd.utils.state import app_state
 
 
 logger = get_logger("customer_insight_page")
@@ -117,7 +115,7 @@ def _render_analysis_tab() -> None:
         st.info("📊 Please sync data to use customer filters.")
         return
         
-    sales_df = app_state.sales_active
+    sales_df = st.session_state.dashboard_data.get("sales_active", pd.DataFrame()) if "dashboard_data" in st.session_state else pd.DataFrame()
     if sales_df.empty:
         st.info("📭 No sales data available. Please sync data first.")
         return
@@ -149,7 +147,7 @@ def _render_mapping_updater_fragment() -> None:
     st.markdown("### ⚙️ Optimization")
     if st.button("🔄 Update Customer Mapping", width="stretch", help="Fetch recent orders and update first-order dates"):
         with st.spinner("Updating mapping..."):
-            sales_df = app_state.sales_active
+            sales_df = st.session_state.dashboard_data.get("sales_active", pd.DataFrame()) if "dashboard_data" in st.session_state else pd.DataFrame()
             if not sales_df.empty:
                 update_customer_mapping(sales_df)
                 st.success("Mapping updated!")

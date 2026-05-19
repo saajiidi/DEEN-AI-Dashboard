@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+env/
+venv/
+.venv/
+
+# Secrets & Local Configs
+.env
+.streamlit/secrets.toml
+
+# Git & IDE
+.git/
+.vscode/
+
+# Caches
+BackEnd/cache/
+.pytest_cache/

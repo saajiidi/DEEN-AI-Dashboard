@@ -1,5 +1,5 @@
 import streamlit as st
-
+import pandas as pd
 def render_insight_dashboard(insights: list, recommendations: list, alerts: list):
     """Renders a premium decision-support panel."""
     
@@ -35,7 +35,6 @@ def render_insight_dashboard(insights: list, recommendations: list, alerts: list
 
 def render_ai_pilot_chat(sales_df: pd.DataFrame):
     """Renders the 'Ask Your Data' input box with live NLP processing."""
-    import pandas as pd
     from BackEnd.services.nlp_engine import get_nlp_response
     
     st.markdown("""

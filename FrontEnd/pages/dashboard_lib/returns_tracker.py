@@ -7,7 +7,6 @@ and calculating Net Sales intelligence.
 from __future__ import annotations
 import time
 from datetime import datetime, date, timedelta
-from threading import Thread
 
 import streamlit as st
 import pandas as pd
@@ -34,7 +33,6 @@ from BackEnd.services.returns_tracker import (
     get_current_sync_window,
     calculate_net_sales_metrics,
     get_issue_type_color,
-    DEFAULT_SHEET_URL,
     get_order_items_breakdown,
     track_reordering_customers,
 )
@@ -166,7 +164,6 @@ def render_returns_tracker_page() -> None:
     if is_loading and "returns_data" not in st.session_state:
         _render_skeleton()
         # Poll for completion
-        from streamlit_autorefresh import st_autorefresh
         st_autorefresh(interval=3000, key=KeyManager.get_key("returns", "sync_refresh"))
         return
 
@@ -181,7 +178,6 @@ def render_returns_tracker_page() -> None:
     # 3. Data is available - If still refreshing in background, show indicator
     if is_loading:
         st.caption("🔄 Background sync in progress... ensuring data fidelity.")
-        from streamlit_autorefresh import st_autorefresh
         st_autorefresh(interval=5000, key=KeyManager.get_key("returns", "bg_refresh"))
 
     df = st.session_state.returns_data.copy()

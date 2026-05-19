@@ -1,15 +1,13 @@
-import warnings
 import os
 from datetime import datetime, timedelta
 import pandas as pd
 
 import streamlit as st
-import numpy as np
 from streamlit_autorefresh import st_autorefresh
 
 from FrontEnd.utils.config import APP_TITLE, APP_DATA_START_DATE
 from FrontEnd.utils.error_handler import ERROR_LOG_FILE, get_logs, log_error
-from FrontEnd.utils.state import init_state, save_state
+from FrontEnd.utils.state import init_state
 from FrontEnd.components import ui
 
 

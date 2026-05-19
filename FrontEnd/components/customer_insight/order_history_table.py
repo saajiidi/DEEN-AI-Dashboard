@@ -9,7 +9,7 @@ Provides a detailed table view of customer orders with:
 
 from __future__ import annotations
 
-from typing import Optional, List, Dict, Any
+from typing import Optional
 from datetime import datetime
 
 import streamlit as st

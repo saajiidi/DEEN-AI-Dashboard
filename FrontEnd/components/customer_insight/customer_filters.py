@@ -10,7 +10,7 @@ Note: Date range is controlled globally from the sidebar.
 
 from __future__ import annotations
 
-from typing import Optional, List, Dict, Any, Callable
+from typing import Optional, Dict, Any, Callable
 
 import streamlit as st
 import pandas as pd

@@ -1,5 +1,6 @@
+from __future__ import annotations
+
 import pandas as pd
-import streamlit as st
 
 def query_app_data(prompt: str, df: pd.DataFrame, context: str = "") -> tuple[str, pd.DataFrame | None]:
     """Processes natural language queries against the provided DataFrame."""

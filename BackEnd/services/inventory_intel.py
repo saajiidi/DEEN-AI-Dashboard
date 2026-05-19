@@ -1,5 +1,4 @@
 import pandas as pd
-import numpy as np
 from BackEnd.core.categories import get_clean_product_name
 
 class InventoryIntelligence:

@@ -9,14 +9,12 @@ Data valid from August 2025 onwards.
 from __future__ import annotations
 
 import gc
-import os
 import re
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple, List
 
 import pandas as pd
-import numpy as np
 import streamlit as st
 
 # --- Polars Engine Auto-Detection ---
@@ -37,10 +35,6 @@ from BackEnd.core.cache_storage import (
 from BackEnd.core.logging_config import get_logger
 from BackEnd.core.memory_utils import (
     optimize_dtypes,
-    safe_groupby_transform,
-    safe_merge,
-    cleanup_memory,
-    safe_operation
 )
 
 # Set pandas option to avoid fragmentation warnings
@@ -1109,169 +1103,79 @@ def _match_returned_items_to_sales(row: pd.Series, order_sales: pd.DataFrame) ->
 
 
 def _build_daily_financials(returns_df: pd.DataFrame, sales_df: Optional[pd.DataFrame]) -> pd.DataFrame:
-    """Build a day-level gross/loss/net series for charts with memory safety."""
+    """Build a day-level gross/loss/net series for charts relying strictly on Polars LazyFrames."""
+    import polars as pl
     columns = ["date", "gross_sales", "return_loss", "partial_loss", "total_loss", "net_sales"]
     
     try:
-        # --- POLARS FAST-PATH OPTIMIZATION ---
-        if POLARS_AVAILABLE and sales_df is not None and not sales_df.empty:
-            try:
-                import polars as pl
-                
-                # 1. Process Sales (Minimal footprint)
-                sales_cols = [c for c in ["order_date", "_line_revenue"] if c in sales_df.columns]
-                pl_sales = pl.from_pandas(sales_df[sales_cols].dropna(subset=["order_date"]))
-                pl_sales = pl_sales.with_columns(pl.col("order_date").dt.date().alias("date"))
-                
-                pl_sales_daily = pl_sales.group_by("date").agg(
-                    pl.col("_line_revenue").sum().alias("gross_sales")
-                )
-                
-                # 2. Process Returns (if available)
-                if not returns_df.empty and "date" in returns_df.columns:
-                    ret_cols = ["date", "issue_type"]
-                    if "_resolved_revenue_impact" in returns_df.columns:
-                        ret_cols.append("_resolved_revenue_impact")
-                        
-                    pl_returns = pl.from_pandas(returns_df[ret_cols].dropna(subset=["date"]))
-                    pl_returns = pl_returns.with_columns(pl.col("date").dt.date())
-                    
-                    if "_resolved_revenue_impact" not in pl_returns.columns:
-                        pl_returns = pl_returns.with_columns(pl.lit(0.0).alias("_resolved_revenue_impact"))
-                        
-                    pl_full = pl_returns.filter(pl.col("issue_type").is_in(["Paid Return", "Non Paid Return"])).group_by("date").agg(
-                        pl.col("_resolved_revenue_impact").sum().alias("return_loss")
-                    )
-                    pl_partial = pl_returns.filter(pl.col("issue_type") == "Partial").group_by("date").agg(
-                        pl.col("_resolved_revenue_impact").sum().alias("partial_loss")
-                    )
-                    pl_dates = pl.concat([pl_sales_daily.select("date"), pl_returns.select("date")]).unique().sort("date")
-                else:
-                    pl_dates = pl_sales_daily.select("date").sort("date")
-                    pl_full = pl.DataFrame(schema={"date": pl.Date, "return_loss": pl.Float64})
-                    pl_partial = pl.DataFrame(schema={"date": pl.Date, "partial_loss": pl.Float64})
-
-                # 3. Fast Joins & Net Math
-                pl_timeline = (
-                    pl_dates.join(pl_sales_daily, on="date", how="left")
-                            .join(pl_full, on="date", how="left")
-                            .join(pl_partial, on="date", how="left")
-                            .fill_null(0.0)
-                )
-                
-                pl_timeline = pl_timeline.with_columns((pl.col("return_loss") + pl.col("partial_loss")).alias("total_loss"))
-                pl_timeline = pl_timeline.with_columns(
-                    pl.when(pl.col("gross_sales") - pl.col("total_loss") < 0).then(0.0).otherwise(pl.col("gross_sales") - pl.col("total_loss")).alias("net_sales")
-                )
-                
-                final_df = pl_timeline.select(columns).to_pandas()
-                final_df["date"] = pd.to_datetime(final_df["date"]) # Ensure Pandas timestamp compatibility
-                return final_df
-            except Exception as e:
-                logger.warning(f"Polars fast-path failed in _build_daily_financials: {e}. Falling back to chunked Pandas.")
-        
-        sales_daily = pd.DataFrame(columns=["date", "gross_sales"])
-
+        # 1. Process Sales (Minimal footprint with LazyFrames)
         if sales_df is not None and not sales_df.empty and "order_date" in sales_df.columns:
-            # Optimize dtypes to reduce memory
-            sales_local = optimize_dtypes(sales_df).copy()
-            sales_local["order_date"] = pd.to_datetime(sales_local["order_date"], errors="coerce")
-            from BackEnd.utils.sales_schema import estimate_line_revenue
-            sales_local["_line_revenue"] = estimate_line_revenue(sales_local).fillna(0.0)
-            sales_local = sales_local.dropna(subset=["order_date"])
-            if not sales_local.empty:
-                # Use safe groupby for large datasets
-                if len(sales_local) > 100000:
-                    # Chunked processing for very large datasets
-                    sales_daily = (
-                        sales_local.groupby(sales_local["order_date"].dt.date)["_line_revenue"]
-                        .sum()
-                        .reset_index(name="gross_sales")
-                        .rename(columns={"order_date": "date"})
-                    )
-                    gc.collect()
-                else:
-                    sales_daily = (
-                        sales_local.groupby(sales_local["order_date"].dt.date)["_line_revenue"]
-                        .sum()
-                        .reset_index(name="gross_sales")
-                        .rename(columns={"order_date": "date"})
-                    )
-
-        if returns_df.empty or "date" not in returns_df.columns:
-            if sales_daily.empty:
-                return pd.DataFrame(columns=columns)
-            sales_daily["return_loss"] = 0.0
-            sales_daily["partial_loss"] = 0.0
-            sales_daily["total_loss"] = 0.0
-            sales_daily["net_sales"] = sales_daily["gross_sales"]
-            return sales_daily[columns].sort_values("date")
-
-        # Optimize returns DataFrame
-        returns_local = optimize_dtypes(returns_df).copy()
-        returns_local["date"] = pd.to_datetime(returns_local["date"], errors="coerce").dt.date
-        
-        # Memory-efficient date key generation
-        sales_dates = sales_daily["date"].tolist() if not sales_daily.empty else []
-        returns_dates = returns_local["date"].dropna().unique().tolist()
-        date_keys = sorted(set(sales_dates) | set(returns_dates))
-        
-        if not date_keys:
-            return pd.DataFrame(columns=columns)
-
-        # Use safe_merge for memory efficiency
-        timeline = pd.DataFrame({"date": date_keys})
-        timeline = safe_merge(timeline, sales_daily, on="date", how="left")
-        timeline["gross_sales"] = timeline["gross_sales"].fillna(0.0)
-
-        full_rows = returns_local[returns_local["issue_type"].isin(["Paid Return", "Non Paid Return"])]
-        partial_rows = returns_local[returns_local["issue_type"] == "Partial"]
-
-        if full_rows.empty:
-            full_daily = pd.DataFrame(columns=["date", "return_loss"])
+            sales_cols = [c for c in ["order_date", "_line_revenue"] if c in sales_df.columns]
+            lz_sales = pl.from_pandas(sales_df[sales_cols].dropna(subset=["order_date"])).lazy()
+            lz_sales = lz_sales.with_columns(pl.col("order_date").dt.date().alias("date"))
+            
+            if "_line_revenue" in sales_cols:
+                lz_sales_daily = lz_sales.group_by("date").agg(pl.col("_line_revenue").sum().alias("gross_sales"))
+            else:
+                lz_sales_daily = lz_sales.group_by("date").agg(pl.lit(0.0).alias("gross_sales"))
         else:
-            full_daily = full_rows.groupby("date")["_resolved_revenue_impact"].sum().reset_index(name="return_loss")
-
-        if partial_rows.empty:
-            partial_daily = pd.DataFrame(columns=["date", "partial_loss"])
+            lz_sales_daily = pl.DataFrame(schema={"date": pl.Date, "gross_sales": pl.Float64}).lazy()
+            
+        # 2. Process Returns (if available)
+        if not returns_df.empty and "date" in returns_df.columns:
+            ret_cols = ["date", "issue_type"]
+            if "_resolved_revenue_impact" in returns_df.columns:
+                ret_cols.append("_resolved_revenue_impact")
+                
+            lz_returns = pl.from_pandas(returns_df[ret_cols].dropna(subset=["date"])).lazy()
+            lz_returns = lz_returns.with_columns(pl.col("date").dt.date())
+            
+            if "_resolved_revenue_impact" not in ret_cols:
+                lz_returns = lz_returns.with_columns(pl.lit(0.0).alias("_resolved_revenue_impact"))
+                
+            lz_full = lz_returns.filter(
+                pl.col("issue_type").is_in(["Paid Return", "Non Paid Return"])
+            ).group_by("date").agg(
+                pl.col("_resolved_revenue_impact").sum().alias("return_loss")
+            )
+            
+            lz_partial = lz_returns.filter(
+                pl.col("issue_type") == "Partial"
+            ).group_by("date").agg(
+                pl.col("_resolved_revenue_impact").sum().alias("partial_loss")
+            )
+            
+            lz_dates = pl.concat([lz_sales_daily.select("date"), lz_returns.select("date")]).unique().sort("date")
         else:
-            partial_daily = partial_rows.groupby("date")["_resolved_revenue_impact"].sum().reset_index(name="partial_loss")
+            lz_dates = lz_sales_daily.select("date").sort("date")
+            lz_full = pl.DataFrame(schema={"date": pl.Date, "return_loss": pl.Float64}).lazy()
+            lz_partial = pl.DataFrame(schema={"date": pl.Date, "partial_loss": pl.Float64}).lazy()
 
-        # Use safe_merge instead of chained merge
-        timeline = safe_merge(timeline, full_daily, on="date", how="left")
-        timeline = safe_merge(timeline, partial_daily, on="date", how="left")
-
-        # Ensure columns exist (safe_merge may not add them if right side is empty)
-        if "return_loss" not in timeline.columns:
-            timeline["return_loss"] = 0.0
-        if "partial_loss" not in timeline.columns:
-            timeline["partial_loss"] = 0.0
-
-        timeline["return_loss"] = pd.to_numeric(timeline["return_loss"], errors="coerce").fillna(0.0)
-        timeline["partial_loss"] = pd.to_numeric(timeline["partial_loss"], errors="coerce").fillna(0.0)
-        timeline["total_loss"] = timeline["return_loss"] + timeline["partial_loss"]
-        timeline["net_sales"] = (timeline["gross_sales"] - timeline["total_loss"]).clip(lower=0.0)
+        # 3. Fast Joins & Net Math using LazyFrame
+        lz_timeline = (
+            lz_dates.join(lz_sales_daily, on="date", how="left")
+                    .join(lz_full, on="date", how="left")
+                    .join(lz_partial, on="date", how="left")
+                    .fill_null(0.0)
+        )
         
-        # Cleanup intermediate DataFrames
-        del returns_local, full_rows, partial_rows, full_daily, partial_daily
-        gc.collect()
+        lz_timeline = lz_timeline.with_columns(
+            (pl.col("return_loss") + pl.col("partial_loss")).alias("total_loss")
+        ).with_columns(
+            pl.when(pl.col("gross_sales") - pl.col("total_loss") < 0)
+              .then(0.0)
+              .otherwise(pl.col("gross_sales") - pl.col("total_loss"))
+              .alias("net_sales")
+        )
         
-        return timeline[columns].sort_values("date")
+        # 4. Execute execution plan
+        final_df = lz_timeline.select(columns).collect().to_pandas()
+        if not final_df.empty:
+            final_df["date"] = pd.to_datetime(final_df["date"]) # Ensure Pandas timestamp compatibility
+        return final_df.sort_values("date")
         
-    except MemoryError as e:
-        logger.error(f"Memory error in _build_daily_financials: {e}")
-        gc.collect()
-        # Return minimal DataFrame with available sales data only
-        if not sales_daily.empty:
-            sales_daily["return_loss"] = 0.0
-            sales_daily["partial_loss"] = 0.0
-            sales_daily["total_loss"] = 0.0
-            sales_daily["net_sales"] = sales_daily["gross_sales"]
-            return sales_daily[columns].sort_values("date")
-        return pd.DataFrame(columns=columns)
     except Exception as e:
         logger.error(f"Error in _build_daily_financials: {e}")
-        gc.collect()
         return pd.DataFrame(columns=columns)
 
 

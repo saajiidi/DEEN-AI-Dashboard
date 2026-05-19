@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from FrontEnd.components import ui
-from datetime import datetime, timedelta
 from BackEnd.utils.sales_schema import ensure_sales_schema
 
 def render_operational_health(df_sales: pd.DataFrame, stock_df: pd.DataFrame):

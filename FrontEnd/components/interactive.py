@@ -1,4 +1,6 @@
 
+from __future__ import annotations
+
 import streamlit as st
 
 
@@ -71,6 +73,3 @@ def dialog_confirm(label: str, state_key: str, reset_fn):
         st.session_state.registered_resets = {}
 
     st.session_state.registered_resets[label] = {"fn": reset_fn, "key": state_key}
-
-
-

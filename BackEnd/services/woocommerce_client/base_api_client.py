@@ -10,10 +10,9 @@ This module provides a foundational HTTP client with:
 from __future__ import annotations
 
 import time
-import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Optional, Callable
+from typing import Optional, Callable
 from functools import wraps
 
 import requests
@@ -56,17 +55,14 @@ class APIError(Exception):
 
 class AuthenticationError(APIError):
     """Raised when API authentication fails."""
-    pass
 
 
 class RateLimitError(APIError):
     """Raised when rate limit is exceeded."""
-    pass
 
 
 class NotFoundError(APIError):
     """Raised when resource is not found."""
-    pass
 
 
 def retry_with_backoff(
@@ -277,7 +273,6 @@ class BaseAPIClient(ABC):
         Returns:
             Dictionary of header key-value pairs
         """
-        pass
     
     @abstractmethod
     def _get_sensitive_keys(self) -> list[str]:

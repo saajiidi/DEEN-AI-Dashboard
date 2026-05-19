@@ -1,7 +1,5 @@
-import io
 
 import pandas as pd
-import plotly.express as px
 import streamlit as st
 
 from BackEnd.core.logging_config import log_error
@@ -9,7 +7,6 @@ from BackEnd.commerce_ops.persistence import clear_state_keys, save_state
 from BackEnd.commerce_ops.ui_components import (
     render_action_bar,
     render_reset_confirm,
-    section_card,
 )
 from BackEnd.commerce_ops.ui_config import INVENTORY_LOCATIONS
 from BackEnd.commerce_ops import core as inv_core

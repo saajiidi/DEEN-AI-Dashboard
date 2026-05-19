@@ -5,10 +5,8 @@ using a robust Union-Find approach for both WooCommerce and Google Sheets.
 """
 
 import pandas as pd
-import os
-import re
 import hashlib
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any
 from pathlib import Path
 from datetime import date
 from BackEnd.core.logging_config import get_logger

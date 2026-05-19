@@ -1,7 +1,4 @@
 import pandas as pd
-import numpy as np
-from itertools import combinations
-from collections import Counter
 from BackEnd.utils.sales_schema import ensure_sales_schema
 
 class MarketBasketEngine:

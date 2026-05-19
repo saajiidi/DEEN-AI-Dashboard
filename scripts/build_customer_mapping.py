@@ -5,8 +5,6 @@ customer_first_order mapping using Union-Find deduplication.
 """
 
 import sys
-import os
-import pandas as pd
 from pathlib import Path
 
 # Add project root to sys.path

@@ -10,7 +10,7 @@ import pandas as pd
 import streamlit as st
 from typing import Optional, Callable
 
-from .api_client import WooCommerceAPI, get_woocommerce_api
+from .api_client import get_woocommerce_api
 from .base_api_client import APIError
 from BackEnd.core.logging_config import get_logger
 

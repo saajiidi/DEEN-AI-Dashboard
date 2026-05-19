@@ -6,7 +6,6 @@ showing sub-categories/products, order counts, and revenue trends.
 
 import pandas as pd
 import streamlit as st
-from datetime import timedelta
 from typing import Optional
 
 from BackEnd.utils.woocommerce_helpers import format_currency

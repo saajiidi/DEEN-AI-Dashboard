@@ -1,4 +1,6 @@
 
+from __future__ import annotations
+
 import streamlit as st
 
 
@@ -72,28 +74,3 @@ def info_box(title: str, body: str):
         """,
         unsafe_allow_html=True,
     )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

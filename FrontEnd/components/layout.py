@@ -3,7 +3,6 @@ from datetime import datetime
 
 import streamlit as st
 
-from FrontEnd.utils.config import APP_TITLE, APP_VERSION
 
 
 def setup_theme():
@@ -788,7 +787,6 @@ def sidebar_branding():
 def page_header():
     """Minimal page_header for the main page content area."""
     # Title is shown in the hero banner - no need to duplicate here
-    pass
 
 
 

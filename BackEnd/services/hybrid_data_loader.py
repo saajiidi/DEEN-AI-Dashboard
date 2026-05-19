@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from io import BytesIO
-import os
 from pathlib import Path
-import sys
 from typing import Optional
 from threading import Thread
 # Robust Streamlit Context Import
@@ -27,7 +24,6 @@ def add_script_run_context(thread):
     return add_ctx(thread)
 
 import pandas as pd
-import requests
 import streamlit as st
 
 # --- Polars Engine Auto-Detection ---

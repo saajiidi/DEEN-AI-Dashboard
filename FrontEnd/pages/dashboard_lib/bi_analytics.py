@@ -185,8 +185,6 @@ def render_ml_forecast_charts(daily: pd.DataFrame, ml_bundle: dict = None):
         try:
             from BackEnd.services.ml_engine import run_automl_forecast as generate_forecasts
             # Pre-flight check
-            import statsmodels
-            import sklearn
         except (ImportError, ModuleNotFoundError):
             st.info("💡 **Predictive Insights Paused**: The advanced ML ensemble engine is currently not installed. The dashboard is running in standard BI mode without rolling forecasts.")
             return

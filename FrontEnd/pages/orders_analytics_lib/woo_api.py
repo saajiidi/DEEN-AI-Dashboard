@@ -1,7 +1,4 @@
 import streamlit as st
-import requests
-import pandas as pd
-from datetime import datetime
 from woocommerce import API
 
 class WooCommerceClient:

@@ -400,7 +400,6 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
         if not sku_perf_df.empty:
             additional_sheets["SKU Performance"] = sku_perf_df
 
-        from FrontEnd.components.data_display import export_to_excel
         report_bytes = ui.export_to_excel(export_df, "Cluster Data", additional_sheets=additional_sheets)
         
         st.download_button(

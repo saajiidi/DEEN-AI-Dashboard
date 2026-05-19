@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import requests
-import json
 from FrontEnd.utils.key_manager import KeyManager
 
 @st.cache_resource

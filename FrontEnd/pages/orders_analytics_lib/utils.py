@@ -1,4 +1,3 @@
-import pandas as pd
 from datetime import datetime, timedelta
 
 def classify_trend(units_sold):

@@ -1,8 +1,10 @@
 # 📊 DEEN Business Intelligence
 ### **AI-Powered Predictive Operations Intelligence System**
 
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://deen-business-intel.streamlit.app/)
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://deen-ops.streamlit.app/)
 [![Code Quality](https://img.shields.io/badge/Code%20Quality-Senior%2B-blueviolet)](https://github.com/saajiidi/DEEN-AI-Dashboard)
+
+**Live Demo:** [https://deen-ops.streamlit.app/](https://deen-ops.streamlit.app/)
 
 "Most dashboards visualize. This terminal explains, predicts, and recommends."
 

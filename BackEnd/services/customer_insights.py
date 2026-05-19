@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import re
 from typing import Optional
 
 import pandas as pd
@@ -179,28 +178,47 @@ def generate_customer_insights_from_sales(
 
 
 def _aggregate_customer_metrics(df: pd.DataFrame) -> pd.DataFrame:
-    grouped = df.groupby("customer_id", dropna=False)
-    result = grouped.agg(
-        primary_name=("normalized_name", lambda s: next((v for v in s if str(v).strip()), "Unknown")),
-        all_emails=("clean_email", lambda s: ", ".join(sorted({v for v in s if v}))),
-        all_phones=("clean_phone", lambda s: ", ".join(sorted({v for v in s if v}))),
-        total_orders=("order_id", lambda s: pd.Series(s).replace("", pd.NA).dropna().nunique()),
-        total_revenue=("order_total", "sum"),
-        first_order=("order_date", "min"),
-        last_order=("order_date", "max"),
-        avg_order_value=("order_total", "mean"),
-        customer_lifespan_days=("order_date", lambda s: (s.max() - s.min()).days if s.notna().any() else 0),
-    ).reset_index()
-
-    today = pd.Timestamp.now().normalize()
-    result["recency_days"] = (today - pd.to_datetime(result["last_order"], errors="coerce").dt.normalize()).dt.days.fillna(9999)
-    result["purchase_cycle_days"] = result.apply(
-        lambda row: round(row["customer_lifespan_days"] / (row["total_orders"] - 1), 0)
-        if row["total_orders"] and row["total_orders"] > 1
-        else pd.NA,
-        axis=1,
+    import polars as pl
+    if df.empty:
+        return pd.DataFrame()
+        
+    lz_df = pl.from_pandas(df).lazy()
+    
+    lz_df = lz_df.with_columns([
+        pl.col("clean_email").fill_null("").cast(pl.String),
+        pl.col("clean_phone").fill_null("").cast(pl.String),
+        pl.col("normalized_name").fill_null("").cast(pl.String)
+    ])
+    
+    agg_exprs = [
+        pl.col("normalized_name").filter(pl.col("normalized_name") != "").first().fill_null("Unknown").alias("primary_name"),
+        pl.col("clean_email").filter(pl.col("clean_email") != "").unique().sort().str.join(", ").alias("all_emails"),
+        pl.col("clean_phone").filter(pl.col("clean_phone") != "").unique().sort().str.join(", ").alias("all_phones"),
+        pl.col("order_id").filter(pl.col("order_id").is_not_null() & (pl.col("order_id").cast(pl.String) != "")).n_unique().alias("total_orders"),
+        pl.col("order_total").sum().alias("total_revenue"),
+        pl.col("order_date").min().alias("first_order"),
+        pl.col("order_date").max().alias("last_order"),
+        pl.col("order_total").mean().alias("avg_order_value"),
+    ]
+    
+    result_lz = lz_df.group_by("customer_id").agg(agg_exprs)
+    
+    result_lz = result_lz.with_columns(
+        ((pl.col("last_order") - pl.col("first_order")).dt.total_days()).fill_null(0).alias("customer_lifespan_days")
     )
-    result["clv"] = result["total_revenue"]
+    
+    today = pd.Timestamp.now().normalize()
+    
+    result_lz = result_lz.with_columns([
+        (pl.lit(today) - pl.col("last_order").dt.truncate("1d")).dt.total_days().fill_null(9999).alias("recency_days"),
+        pl.when(pl.col("total_orders") > 1)
+          .then((pl.col("customer_lifespan_days") / (pl.col("total_orders") - 1)).round(0))
+          .otherwise(pl.lit(None))
+          .alias("purchase_cycle_days"),
+        pl.col("total_revenue").alias("clv")
+    ])
+    
+    result = result_lz.collect().to_pandas()
     return result
 
 

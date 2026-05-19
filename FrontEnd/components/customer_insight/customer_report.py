@@ -9,12 +9,11 @@ Provides comprehensive customer report with:
 
 from __future__ import annotations
 
-from typing import Optional, Dict, Any, List
-from datetime import datetime, date
+from typing import Optional, Dict, Any
+from datetime import datetime
 
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 
 from FrontEnd.components import ui
 from BackEnd.utils.woocommerce_helpers import (
