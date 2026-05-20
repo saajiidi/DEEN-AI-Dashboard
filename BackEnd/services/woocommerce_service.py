@@ -257,17 +257,10 @@ class WooCommerceService:
                 }
                 flattened_data.append(item_data)
                 
-        import polars as pl
         if not flattened_data:
             return pd.DataFrame()
             
-        # Creating a DataFrame from a list of dicts is significantly faster in Polars
-        # than Pandas because of Rust's strict typing and Arrow memory backend.
-        try:
-            return pl.DataFrame(flattened_data, infer_schema_length=1000).to_pandas()
-        except Exception:
-            # Fallback in case of highly irregular schema
-            return pd.DataFrame(flattened_data)
+        return pd.DataFrame(flattened_data)
 
     def save_to_parquet(self, df: pd.DataFrame, base_path: str = "data"):
         """Save DataFrame to year-partitioned parquet files."""

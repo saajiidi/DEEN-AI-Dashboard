@@ -27,11 +27,7 @@ import pandas as pd
 import streamlit as st
 
 # --- Polars Engine Auto-Detection ---
-try:
-    import polars as pl
-    POLARS_AVAILABLE = True
-except ImportError:
-    POLARS_AVAILABLE = False
+POLARS_AVAILABLE = False
 
 from BackEnd.core.cache_storage import (
     build_cache_target,
