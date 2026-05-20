@@ -6,6 +6,9 @@ def remove_blank_files(start_path="."):
     # Search through all files in the directory and subdirectories
     for path in Path(start_path).rglob('*'):
         if path.is_file():
+            # Avoid deleting empty __init__.py files which are necessary for Python packages
+            if path.name == "__init__.py":
+                continue
             # Check if file size is 0 bytes
             if path.stat().st_size == 0:
                 print(f"🗑️ Deleting blank file: {path}")
