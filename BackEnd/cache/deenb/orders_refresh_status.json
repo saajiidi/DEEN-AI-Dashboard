@@ -1,6 +1,8 @@
 {
   "kind": "orders",
-  "state": "complete",
-  "updated_at": "2026-05-19 16:53:32",
-  "rows": 4691
+  "state": "syncing",
+  "updated_at": "2026-05-20 16:45:30",
+  "start_date": "2026-04-20",
+  "end_date": "2026-05-20",
+  "days": 30
 }

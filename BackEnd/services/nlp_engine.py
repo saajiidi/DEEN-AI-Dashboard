@@ -162,6 +162,12 @@ def get_nlp_response(query: str, sales_df: pd.DataFrame, agent_type: str = "Stan
     if agent_type in ["Local AI Agent", "Google Gemini"]:
         agent = LLMAgent(model_name=model_name, base_url=base_url, agent_type=agent_type)
         return agent.query(query, sales_df)
+    elif agent_type == "RAG Agent (Deep Data)":
+        from BackEnd.services.rag_engine import RAGAgent
+        # Using Google Gemini as the default underlying LLM for the RAG demo here, or mapping it to the selected one
+        rag_backend = "Google Gemini" if st.secrets.get("GEMINI_API_KEY") else "Local AI Agent"
+        agent = RAGAgent(model_name=model_name, base_url=base_url, agent_type=rag_backend)
+        return agent.query(query, sales_df)
     else:
         interpreter = DataNLPInterpreter(sales_df)
         return interpreter.process_query(query)

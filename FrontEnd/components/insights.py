@@ -51,7 +51,7 @@ def render_ai_pilot_chat(sales_df: pd.DataFrame):
     # AI Configuration Bar
     c1, c2, c3 = st.columns([1, 1, 2])
     with c1:
-        agent_type = st.selectbox("🤖 Brain Type", ["Standard", "Google Gemini", "Local AI Agent"], help="Standard is fast/rule-based. Gemini requires API key. Local uses Ollama.")
+        agent_type = st.selectbox("🤖 Brain Type", ["Standard", "Google Gemini", "RAG Agent (Deep Data)", "Local AI Agent"], help="Standard is fast/rule-based. Gemini requires API key. RAG uses vector-search to answer questions about specific rows. Local uses Ollama.")
     with c2:
         model_name = st.text_input("📦 Model Name", value="gemma", help="Model name (e.g., gemma, llama3, mistral)")
     with c3:
