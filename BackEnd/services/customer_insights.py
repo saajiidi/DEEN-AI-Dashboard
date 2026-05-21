@@ -170,6 +170,11 @@ def generate_customer_insights_from_sales(
             favorite_products = get_favorite_products(df)
             if not favorite_products.empty:
                 result = result.merge(favorite_products, on="customer_id", how="left")
+                
+        # Remove redundant 'Unnamed' or blank artifact customers
+        invalid_names = ["unnamed", "unknown", "nan", "none", ""]
+        result = result[~result["primary_name"].astype(str).str.strip().str.lower().isin(invalid_names)]
+        
         return result.sort_values("total_revenue", ascending=False).reset_index(drop=True)
     except Exception as exc:
         log_error(exc, context="Customer Insights Generation")
@@ -190,8 +195,12 @@ def _aggregate_customer_metrics(df: pd.DataFrame) -> pd.DataFrame:
         pl.col("normalized_name").fill_null("").cast(pl.String)
     ])
     
+    invalid_names = ["unknown", "unnamed", "nan", "none", ""]
+    
     agg_exprs = [
-        pl.col("normalized_name").filter(pl.col("normalized_name") != "").first().fill_null("Unknown").alias("primary_name"),
+        pl.col("normalized_name")
+          .filter(~pl.col("normalized_name").str.to_lowercase().str.strip().is_in(invalid_names))
+          .first().fill_null("Unknown").alias("primary_name"),
         pl.col("clean_email").filter(pl.col("clean_email") != "").unique().sort().str.join(", ").alias("all_emails"),
         pl.col("clean_phone").filter(pl.col("clean_phone") != "").unique().sort().str.join(", ").alias("all_phones"),
         pl.col("order_id").filter(pl.col("order_id").is_not_null() & (pl.col("order_id").cast(pl.String) != "")).n_unique().alias("total_orders"),
@@ -259,6 +268,30 @@ def _prepare_customer_identity(df: pd.DataFrame) -> pd.DataFrame:
             ),
             axis=1,
         )
+        
+    # Intelligently merge 'Unknown' profiles if they share the same valid phone number
+    invalid_names = ["unknown", "unnamed", "nan", "none", ""]
+    valid_profiles = prepared[~prepared["normalized_name"].astype(str).str.lower().str.strip().isin(invalid_names)]
+    
+    if not valid_profiles.empty:
+        # Get the most recent valid customer_id for each phone
+        phone_to_valid_id = valid_profiles[valid_profiles["clean_phone"] != ""].drop_duplicates("clean_phone", keep="last").set_index("clean_phone")["customer_id"].to_dict()
+        # Get the most recent valid customer_id for each email
+        email_to_valid_id = valid_profiles[valid_profiles["clean_email"] != ""].drop_duplicates("clean_email", keep="last").set_index("clean_email")["customer_id"].to_dict()
+        
+        def refine_unknown_profiles(row):
+            is_invalid = str(row.get("normalized_name", "")).lower().strip() in invalid_names
+            phone = row.get("clean_phone", "")
+            email = row.get("clean_email", "")
+            if is_invalid:
+                if phone and phone in phone_to_valid_id:
+                    return phone_to_valid_id[phone]
+                if email and email in email_to_valid_id:
+                    return email_to_valid_id[email]
+            return row["customer_id"]
+            
+        prepared["customer_id"] = prepared.apply(refine_unknown_profiles, axis=1)
+        
     return prepared
 
 

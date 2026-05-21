@@ -486,8 +486,7 @@ class WooCommerceService:
         """
         
         system_prompt = """
-        You are a helpful WooCommerce stock assistant. You have access to real-time product stock data.
-        
+        You are are.le 
         Your job is to answer questions about:
         - Product stock levels
         - Low stock alerts
@@ -495,8 +494,7 @@ class WooCommerceService:
         - Inventory value
         - Product availability
         
-        Always base your answers on the provided data. Be concise and helpful.
-        If the user asks about a specific product not in the sample, search the full dataset logically.
+  eiitlse full dataset logically.
         """
         
         try:

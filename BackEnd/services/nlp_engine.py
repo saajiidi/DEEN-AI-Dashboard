@@ -353,6 +353,29 @@ class LLMAgent:
                 "top_reasons": returns_df['return_reason'].value_counts().head(3).to_dict() if 'return_reason' in returns_df.columns else {}
             }
         
+        # Handle "Learn:" or "Remember:" commands
+        from pathlib import Path
+        knowledge_file = Path("BackEnd/data/pilot_knowledge.txt")
+        if prompt.strip().lower().startswith("learn:") or prompt.strip().lower().startswith("remember:"):
+            new_knowledge = prompt.split(":", 1)[1].strip()
+            knowledge_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(knowledge_file, "a", encoding="utf-8") as f:
+                f.write(f"- {new_knowledge}\n")
+            
+            # Clear cache when knowledge base is updated
+            if "llm_response_cache" in st.session_state:
+                st.session_state.llm_response_cache.clear()
+                
+            return f"✅ Got it! I have updated my knowledge base with: '{new_knowledge}'. I'll remember this for future queries."
+
+        custom_instructions = ""
+        if knowledge_file.exists():
+            try:
+                with open(knowledge_file, "r", encoding="utf-8") as f:
+                    custom_instructions = f.read().strip()
+            except Exception:
+                pass
+
         # LLM Response Cache Check
         import hashlib
         import streamlit as st
@@ -361,17 +384,26 @@ class LLMAgent:
             
         state_hash = hashlib.md5(json.dumps(stats, sort_keys=True).encode('utf-8')).hexdigest()
         prompt_hash = hashlib.md5(prompt.encode('utf-8')).hexdigest()
-        cache_key = f"nlp_{self.agent_type}_{self.model_name}_{prompt_hash}_{state_hash}"
+        # Include custom_instructions in cache key so changes invalidate cache
+        cache_key = f"nlp_{self.agent_type}_{self.model_name}_{prompt_hash}_{state_hash}_{hashlib.md5(custom_instructions.encode('utf-8')).hexdigest()}"
         
         if cache_key in st.session_state.llm_response_cache:
             return st.session_state.llm_response_cache[cache_key]
 
         system_prompt = f"""
-        You are DEEN-BI Data Pilot, an expert e-commerce analyst. 
-        You have access to the following dataset summaries:
+        You are DEEN-BI Data Pilot, an autonomous expert e-commerce AI agent. 
+        You have access to the following real-time dataset summaries and metrics:
         {json.dumps(stats, indent=2)}
         
-        Answer the user's question accurately based ONLY on this summary. 
+        CRITICAL RULES:
+        1. "Total Orders" or "Number of Orders" ALWAYS refers to `order_count` (unique order IDs), NOT `total_rows`. 
+        2. `total_rows` represents the number of individual line items sold. Do NOT use `total_rows` when asked for order count.
+        3. Only use `order_count` to determine the unique number of orders.
+        
+        USER KNOWLEDGE BASE / CUSTOM INSTRUCTIONS:
+        {custom_instructions}
+        
+        Answer the user's question accurately based ONLY on this summary and the rules above. Act proactively to detect anomalies or trends.
         Be professional, concise, and use markdown.
         """
         

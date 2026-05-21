@@ -130,24 +130,40 @@ def export_to_excel(
     output.seek(0)
     return output.read()
 
-def render_ai_pilot_chat_ui(sales_df: pd.DataFrame, returns_df: pd.DataFrame = None, stock_df: pd.DataFrame = None):
+def render_ai_pilot_chat_ui(sales_df: pd.DataFrame, returns_df: pd.DataFrame = None, stock_df: pd.DataFrame = None, key_prefix: str = "global"):
     """Renders the AI Data Pilot chat interface inside a container like a popover."""
     st.markdown("#### 🤖 Operations Data Pilot")
     st.caption("Ask natural language questions about your e-commerce health.")
 
-    # Initialize chat history in session state if it doesn't exist
-    if "pilot_messages" not in st.session_state:
-        st.session_state.pilot_messages = [{"role": "assistant", "content": "How can I help you analyze the data?"}]
+    chat_key = f"pilot_messages_{key_prefix}"
 
+    # Initialize chat history in session state if it doesn't exist
+    if chat_key not in st.session_state:
+        st.session_state[chat_key] = [{"role": "assistant", "content": "How can I help you analyze the data?"}]
+
+    import re
     # Display prior chat messages
-    for message in st.session_state.pilot_messages:
+    for message in st.session_state[chat_key]:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
+            # Re-render any historical Plotly charts detected
+            if message["role"] == "assistant" and "[TOOL_CALL: GENERATE_PLOTLY]" in message.get("content", "") and "```python" in message.get("content", ""):
+                code_blocks = re.findall(r'```python\n(.*?)\n```', message["content"], re.DOTALL)
+                for code in code_blocks:
+                    if "plotly" in code.lower():
+                        try:
+                            local_vars = {"pd": pd, "df": sales_df.copy() if isinstance(sales_df, pd.DataFrame) else pd.DataFrame()}
+                            safe_code = code.replace("fig.show()", "")
+                            exec(safe_code, globals(), local_vars)
+                            if "fig" in local_vars:
+                                st.plotly_chart(local_vars["fig"], use_container_width=True)
+                        except Exception as e:
+                            st.error(f"Could not render chart from history: {e}")
 
     # Accept user input
-    if prompt := st.chat_input("e.g., 'What are my top 5 selling products?'"):
+    if prompt := st.chat_input("e.g., 'What are my top 5 selling products?'", key=f"chat_input_{key_prefix}"):
         # Add user message to history and display it
-        st.session_state.pilot_messages.append({"role": "user", "content": prompt})
+        st.session_state[chat_key].append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
 
@@ -158,18 +174,19 @@ def render_ai_pilot_chat_ui(sales_df: pd.DataFrame, returns_df: pd.DataFrame = N
                     from BackEnd.services.nlp_engine import get_nlp_response
                     
                     import os
-                    agent_type = "Standard"
+                    # Upgrade to prefer RAG Agent (Deep Data) as the default for agentic capability
+                    agent_type = "RAG Agent (Deep Data)"
                     try:
-                        if "OPENROUTER_API_KEY" in st.secrets or os.environ.get("OPENROUTER_API_KEY"):
-                            agent_type = "OpenRouter"
-                        elif "HUGGINGFACE_API_KEY" in st.secrets or os.environ.get("HUGGINGFACE_API_KEY"):
-                            agent_type = "HuggingFace"
+                        if "GEMINI_API_KEY" in st.secrets or os.environ.get("GEMINI_API_KEY"):
+                            pass # Default to RAG Agent which uses Gemini
                         elif "GROQ_API_KEY" in st.secrets or os.environ.get("GROQ_API_KEY"):
                             agent_type = "Groq"
-                        elif "GEMINI_API_KEY" in st.secrets or os.environ.get("GEMINI_API_KEY"):
-                            agent_type = "Google Gemini"
+                        elif "HUGGINGFACE_API_KEY" in st.secrets or os.environ.get("HUGGINGFACE_API_KEY"):
+                            agent_type = "HuggingFace"
+                        elif "OPENROUTER_API_KEY" in st.secrets or os.environ.get("OPENROUTER_API_KEY"):
+                            agent_type = "OpenRouter"
                     except Exception:
-                        pass
+                        agent_type = "Standard"
                     
                     response = get_nlp_response(prompt, sales_df, returns_df=returns_df, stock_df=stock_df, agent_type=agent_type)
                 except Exception as e:
@@ -181,9 +198,23 @@ def render_ai_pilot_chat_ui(sales_df: pd.DataFrame, returns_df: pd.DataFrame = N
                         yield word + " "
                         time.sleep(0.015)
                 st.write_stream(stream_data(response))
+                
+                # Execute any newly generated Plotly code
+                if "[TOOL_CALL: GENERATE_PLOTLY]" in response and "```python" in response:
+                    code_blocks = re.findall(r'```python\n(.*?)\n```', response, re.DOTALL)
+                    for code in code_blocks:
+                        if "plotly" in code.lower():
+                            try:
+                                local_vars = {"pd": pd, "df": sales_df.copy() if isinstance(sales_df, pd.DataFrame) else pd.DataFrame()}
+                                safe_code = code.replace("fig.show()", "")
+                                exec(safe_code, globals(), local_vars)
+                                if "fig" in local_vars:
+                                    st.plotly_chart(local_vars["fig"], use_container_width=True)
+                            except Exception as e:
+                                st.error(f"Could not render chart: {e}")
         
         # Add assistant response to history
-        st.session_state.pilot_messages.append({"role": "assistant", "content": response})
+        st.session_state[chat_key].append({"role": "assistant", "content": response})
 
 
 def show_last_updated(path: str):

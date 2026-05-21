@@ -140,6 +140,14 @@ def _render_analysis_tab() -> None:
     # 3. Results section below filters
     _render_filtered_results(sales_df, filters)
 
+    st.markdown("---")
+    st.markdown("#### 🤖 Customer Contextual AI Agent")
+    st.caption("Ask specific questions about customer segments, retention, and cohorts.")
+    from FrontEnd.components.data_display import render_ai_pilot_chat_ui
+    returns_data = st.session_state.get("returns_data", pd.DataFrame())
+    stock_df = st.session_state.dashboard_data.get("stock", pd.DataFrame()) if "dashboard_data" in st.session_state else pd.DataFrame()
+    render_ai_pilot_chat_ui(sales_df, returns_df=returns_data, stock_df=stock_df, key_prefix="customer_cluster")
+
 
 @st.fragment
 def _render_mapping_updater_fragment() -> None:

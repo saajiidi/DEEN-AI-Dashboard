@@ -183,7 +183,7 @@ def _render_workspace_sidebar():
                 returns_df = st.session_state.get("returns_data", pd.DataFrame())
                 stock_df = dashboard_data.get("stock", pd.DataFrame())
                 from FrontEnd.components.data_display import render_ai_pilot_chat_ui
-                render_ai_pilot_chat_ui(sales_df=sales_df, returns_df=returns_df, stock_df=stock_df)
+                render_ai_pilot_chat_ui(sales_df=sales_df, returns_df=returns_df, stock_df=stock_df, key_prefix="sidebar_global")
             else:
                 st.info("Navigate to a dashboard and load data to activate the pilot.")
 

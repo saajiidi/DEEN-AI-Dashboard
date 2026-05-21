@@ -53,16 +53,16 @@ def render_ai_pilot_chat(sales_df: pd.DataFrame):
     with c1:
         import os
         agent_options = ["Google Gemini", "Groq", "OpenRouter", "HuggingFace", "RAG Agent (Deep Data)", "Standard", "Local AI Agent"]
-        default_idx = 5 # Standard
+        default_idx = 4 # RAG Agent
         try:
-            if "OPENROUTER_API_KEY" in st.secrets or os.environ.get("OPENROUTER_API_KEY"):
-                default_idx = 2
-            elif "HUGGINGFACE_API_KEY" in st.secrets or os.environ.get("HUGGINGFACE_API_KEY"):
-                default_idx = 3
+            if "GEMINI_API_KEY" in st.secrets or os.environ.get("GEMINI_API_KEY"):
+                default_idx = 4 # Use RAG Agent with Gemini
             elif "GROQ_API_KEY" in st.secrets or os.environ.get("GROQ_API_KEY"):
                 default_idx = 1
-            elif "GEMINI_API_KEY" in st.secrets or os.environ.get("GEMINI_API_KEY"):
-                default_idx = 0
+            elif "HUGGINGFACE_API_KEY" in st.secrets or os.environ.get("HUGGINGFACE_API_KEY"):
+                default_idx = 3
+            elif "OPENROUTER_API_KEY" in st.secrets or os.environ.get("OPENROUTER_API_KEY"):
+                default_idx = 2
         except Exception:
             pass
         agent_type = st.selectbox("🤖 Brain Type", agent_options, index=default_idx, help="API keys required for cloud providers. Standard is fast/rule-based. Local uses Ollama.")

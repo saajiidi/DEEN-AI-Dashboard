@@ -464,6 +464,13 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, d
         
     st.markdown("---")
     
+    st.markdown("#### 🤖 Inventory Contextual AI Agent")
+    st.caption("Ask specific questions about your stock, low inventory, or velocity.")
+    from FrontEnd.components.data_display import render_ai_pilot_chat_ui
+    returns_data = st.session_state.get("returns_data", pd.DataFrame())
+    render_ai_pilot_chat_ui(df_sales if df_sales is not None else pd.DataFrame(), returns_df=returns_data, stock_df=inventory, key_prefix="inventory_cluster")
+
+    
     # 3. Report Summary & Download
     d1, d2 = st.columns([2, 1])
     with d1:

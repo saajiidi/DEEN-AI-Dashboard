@@ -209,7 +209,7 @@ class RAGAgent:
             if embeddings.size > 0:
                 self.vector_store.add_documents(docs, embeddings)
 
-    def query(self, prompt: str, context_dfs: dict[str, pd.DataFrame]) -> str:
+    def query(self, prompt: str, context_dfs: dict[str, pd.DataFrame], depth: int = 0) -> str:
         """Full RAG Pipeline: Ingest -> Embed Query -> Retrieve -> Generate."""
         # 0. Vector store is now persistent cross-session, deduplication handled in ingest
         
@@ -331,22 +331,29 @@ class RAGAgent:
         
         # 6. Augmented Generation
         system_prompt = f"""
-        You are DEEN-BI Data Pilot, an expert e-commerce analyst.
+        You are DEEN-BI Data Pilot, an autonomous expert e-commerce AI agent.
         
-        GLOBAL AGGREGATES (Existing System Analysis across all domains):
+        GLOBAL AGGREGATES (Cross-domain System Analysis):
         {json.dumps(global_stats, indent=2)}
         
-        SPECIFIC RECORDS (Semantic search on recent rows):
-        
+        SPECIFIC RECORDS (Semantic search on active data):
         {context_block}
         
-        The provided records prioritize the user's currently active page ("{active_section}"), followed by general site data.
-        Answer the user's question accurately based on the global aggregates and specific records above. Be concise, professional, and use markdown.
+        INSTRUCTIONS for AGENT:
+        1. Analyze the user's request.
+        2. Identify if the query requires specific data from the SPECIFIC RECORDS or overall trends from GLOBAL AGGREGATES.
+        3. If the provided data does not contain the answer and you suspect older or more comprehensive data is needed, output EXACTLY the string `[TOOL_CALL: FETCH_MORE_HISTORY]` and nothing else.
+        4. If the user asks for a chart, graph, or visualization, output EXACTLY the string `[TOOL_CALL: GENERATE_PLOTLY]` on its own line, then provide your reasoning, and finally output valid Python Plotly code inside a ```python block.
+        5. Formulate your reasoning internally.
+        6. Provide the final response to the user.
+        
+        - The provided records prioritize the user's currently active page ("{active_section}"), followed by general site data.
+        - Be concise, highly analytical, and professional. Use markdown formatting.
         If the user asks to compare datasets (e.g., "Is the highest returned item also my best-selling item?"), proactively cross-reference the top_returned_items and top_selling_items.
         When asked for return reasons or similar distributions, present them using visual markdown charts (e.g., `Reason | ██████ 60%`).
         When queried about top-performing items, sales rankings, or categories, present the data in a clean Markdown table.
         If the user asks for a trend, ASCII chart, or textual graph, utilize the pre-calculated `recent_trend_chart_markdown` from the global aggregates.
-        If the user explicitly asks for an interactive chart or visualization, output valid Python Plotly code (using plotly.express or plotly.graph_objects) inside a ```python block, defining the data inline within the code based on the records.
+        If the user explicitly asks for an interactive chart or visualization, you must use the `[TOOL_CALL: GENERATE_PLOTLY]` tool and define the data inline based on the records.
         """
         
         def try_gemini():
@@ -416,6 +423,19 @@ class RAGAgent:
                 res = func()
                 if res in ["MISSING_KEY", "LOCAL_ERROR"]:
                     continue
+                    
+                if "[TOOL_CALL: FETCH_MORE_HISTORY]" in res and depth == 0:
+                    import streamlit as st
+                    st.toast("🤖 Data Pilot is fetching deeper history to answer your question...", icon="⏳")
+                    from BackEnd.services.hybrid_data_loader import load_cached_woocommerce_history
+                    deep_history_df = load_cached_woocommerce_history()
+                    if not deep_history_df.empty:
+                        deep_context = deep_history_df.copy()
+                        deep_context["_Data_Context"] = "Global Site Data (Deep History)"
+                        self._ingest_dataframe(deep_context, max_rows=1500)
+                        # Recursive call with depth 1
+                        return self.query(prompt, context_dfs, depth=1)
+                        
                 st.session_state.llm_response_cache[cache_key] = res
                 return res
             except Exception as e:

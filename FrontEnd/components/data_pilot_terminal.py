@@ -322,6 +322,20 @@ def render_advanced_sql_terminal(sales_df: pd.DataFrame | None = None, returns_d
         with st.chat_message("user"): st.markdown(chat_prompt)
 
     if chat_prompt:
+        
+        # Check for Learn/Remember intercept
+        if chat_prompt.strip().lower().startswith("learn:") or chat_prompt.strip().lower().startswith("remember:"):
+            from pathlib import Path
+            new_knowledge = chat_prompt.split(":", 1)[1].strip()
+            knowledge_file = Path("BackEnd/data/pilot_knowledge.txt")
+            knowledge_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(knowledge_file, "a", encoding="utf-8") as f:
+                f.write(f"- {new_knowledge}\n")
+            if "llm_response_cache" in st.session_state:
+                st.session_state.llm_response_cache.clear()
+            msg = f"✅ Got it! I have updated my knowledge base with: '{new_knowledge}'. I'll remember this for future SQL and data queries."
+            st.session_state.pilot_chat_messages.append({"role": "assistant", "content": msg})
+            st.rerun()
             
         with st.chat_message("assistant"):
             with st.spinner("AI is analyzing..."):
@@ -345,9 +359,25 @@ def render_advanced_sql_terminal(sales_df: pd.DataFrame | None = None, returns_d
                     recent_logs = "\n".join([re.sub(r'<[^>]+>', '', log) for log in st.session_state.pilot_term_logs[-5:]]) # Clean HTML from logs
                     schema_context = "\n".join(schema_info) # Corrected escaping
                     
-                    enhanced_prompt = f"""You are DEEN-BI Data Pilot, an expert e-commerce analyst and Python data scientist.
+                    from pathlib import Path
+                    custom_instructions = ""
+                    knowledge_file = Path("BackEnd/data/pilot_knowledge.txt")
+                    if knowledge_file.exists():
+                        try:
+                            with open(knowledge_file, "r", encoding="utf-8") as f:
+                                custom_instructions = f.read().strip()
+                        except Exception: pass
+
+                    enhanced_prompt = f"""You are DEEN-BI Data Pilot, an autonomous AI SQL Agent and Python data scientist.
 Database Schema:
 {schema_context}
+
+CRITICAL RULES:
+1. "Total Orders" or "Number of Orders" ALWAYS refers to the count of unique `order_id` values.
+2. The total number of rows does NOT equal total orders; it represents individual item sales.
+
+USER KNOWLEDGE BASE / CUSTOM INSTRUCTIONS:
+{custom_instructions}
 
 Recent Terminal Activity:
 {recent_logs}

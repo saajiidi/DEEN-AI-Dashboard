@@ -81,7 +81,9 @@ def render_executive_summary(df_sales: pd.DataFrame, df_customers: pd.DataFrame,
                     
                 agent = LLMAgent(agent_type=agent_type)
                 context_dfs = {"sales": df_sales}
-                prompt = "You are a CEO-level Executive Data Analyst. Provide a concise, 3-bullet-point executive brief on the current sales performance, identifying the biggest win and the biggest risk based on the data summary provided. Keep it strictly under 100 words. Format cleanly using markdown."
+                avg_ltv = df_customers["clv"].mean() if not df_customers.empty and "clv" in df_customers.columns else 0
+                repeat_rate = (df_customers["total_orders"] > 1).mean() * 100 if not df_customers.empty and "total_orders" in df_customers.columns else 0
+                prompt = f"You are a CEO-level Executive Data Analyst. Provide a concise, 4-bullet-point executive brief on the current sales performance. Identify the biggest win, the biggest risk, and summarize Customer Lifetime Value (LTV) improvements or retention health (Current Avg LTV: ৳{avg_ltv:,.0f}, Repeat Rate: {repeat_rate:.1f}%). Keep it strictly under 120 words. Format cleanly using markdown."
                 
                 ai_brief = agent.query(prompt, context_dfs)
                 st.session_state["ai_executive_brief"] = ai_brief
