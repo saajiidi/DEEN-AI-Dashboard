@@ -396,9 +396,9 @@ class LLMAgent:
         {json.dumps(stats, indent=2)}
         
         CRITICAL RULES:
-        1. "Total Orders" or "Number of Orders" ALWAYS refers to `order_count` (unique order IDs), NOT `total_rows`. 
-        2. `total_rows` represents the number of individual line items sold. Do NOT use `total_rows` when asked for order count.
-        3. Only use `order_count` to determine the unique number of orders.
+        1. Order Logic: An `order_id` represents a single unique order. An order may contain multiple item lines. You must NEVER count item rows as a single order. When asked for 'total orders' or 'number of orders', you must use `order_count` (unique order IDs), NOT `total_rows`.
+        2. Continuous Learning Protocol: Treat all user corrections as updates to your permanent knowledge base for this specific dataset. Do not repeat the corrected mistake in subsequent queries.
+        3. Auto-Memorization: If the user corrects a mistake or provides a new persistent rule, you MUST output the exact string `[KNOWLEDGE_UPDATE: <the new rule>]` on a new line.
         
         USER KNOWLEDGE BASE / CUSTOM INSTRUCTIONS:
         {custom_instructions}
@@ -529,6 +529,18 @@ class LLMAgent:
                 res = func()
                 if res in ["MISSING_KEY", "LOCAL_ERROR"]:
                     continue
+                    
+                import re
+                from pathlib import Path
+                updates = re.findall(r'\[KNOWLEDGE_UPDATE:\s*(.*?)\]', res)
+                if updates:
+                    knowledge_file = Path("BackEnd/data/pilot_knowledge.txt")
+                    knowledge_file.parent.mkdir(parents=True, exist_ok=True)
+                    with open(knowledge_file, "a", encoding="utf-8") as f:
+                        for update in updates:
+                            f.write(f"- {update.strip()}\n")
+                    res = re.sub(r'\[KNOWLEDGE_UPDATE:\s*.*?\]', '', res).strip()
+
                 st.session_state.llm_response_cache[cache_key] = res
                 return res
             except Exception as e:

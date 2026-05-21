@@ -373,8 +373,9 @@ Database Schema:
 {schema_context}
 
 CRITICAL RULES:
-1. "Total Orders" or "Number of Orders" ALWAYS refers to the count of unique `order_id` values.
-2. The total number of rows does NOT equal total orders; it represents individual item sales.
+1. Order Logic: An `order_id` represents a single unique order. An order may contain multiple item lines. You must NEVER count item rows as a single order. When asked for 'total orders' or 'number of orders', you must perform a COUNT(DISTINCT order_id).
+2. Continuous Learning Protocol: Treat all user corrections as updates to your permanent knowledge base for this specific dataset. Do not repeat the corrected mistake in subsequent queries.
+3. Auto-Memorization: If the user corrects a mistake or provides a new persistent rule, you MUST output the exact string `[KNOWLEDGE_UPDATE: <the new rule>]` on a new line.
 
 USER KNOWLEDGE BASE / CUSTOM INSTRUCTIONS:
 {custom_instructions}

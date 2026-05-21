@@ -211,27 +211,6 @@ class RAGAgent:
 
     def query(self, prompt: str, context_dfs: dict[str, pd.DataFrame], depth: int = 0) -> str:
         """Full RAG Pipeline: Ingest -> Embed Query -> Retrieve -> Generate."""
-        
-        # Handle "Learn:" or "Remember:" commands
-        from pathlib import Path
-        knowledge_file = Path("BackEnd/data/pilot_knowledge.txt")
-        if prompt.strip().lower().startswith("learn:") or prompt.strip().lower().startswith("remember:"):
-            new_knowledge = prompt.split(":", 1)[1].strip()
-            knowledge_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(knowledge_file, "a", encoding="utf-8") as f:
-                f.write(f"- {new_knowledge}\n")
-            if "llm_response_cache" in st.session_state:
-                st.session_state.llm_response_cache.clear()
-            return f"✅ Got it! I have updated my knowledge base with: '{new_knowledge}'. I'll remember this for future queries."
-            
-        custom_instructions = ""
-        if knowledge_file.exists():
-            try:
-                with open(knowledge_file, "r", encoding="utf-8") as f:
-                    custom_instructions = f.read().strip()
-            except Exception:
-                pass
-
         # 0. Vector store is now persistent cross-session, deduplication handled in ingest
         
         # Extract individual DFs
@@ -335,8 +314,7 @@ class RAGAgent:
             
         state_hash = hashlib.md5(json.dumps(global_stats, sort_keys=True).encode('utf-8')).hexdigest()
         prompt_hash = hashlib.md5(prompt.encode('utf-8')).hexdigest()
-        kb_hash = hashlib.md5(custom_instructions.encode('utf-8')).hexdigest()
-        cache_key = f"rag_{self.agent_type}_{self.model_name}_{prompt_hash}_{state_hash}_{kb_hash}"
+        cache_key = f"rag_{self.agent_type}_{self.model_name}_{prompt_hash}_{state_hash}"
         
         if cache_key in st.session_state.llm_response_cache:
             return st.session_state.llm_response_cache[cache_key]
@@ -355,13 +333,6 @@ class RAGAgent:
         system_prompt = f"""
         You are DEEN-BI Data Pilot, an autonomous expert e-commerce AI agent.
         
-        CRITICAL RULES FOR ORDER COUNTING:
-        1. "Total Orders" or "Number of Orders" ALWAYS refers to a distinct count of unique `order_id` values.
-        2. The total number of rows represents individual line items. Do NOT use row counts when asked for order counts.
-        
-        USER KNOWLEDGE BASE / CUSTOM INSTRUCTIONS:
-        {custom_instructions}
-        
         GLOBAL AGGREGATES (Cross-domain System Analysis):
         {json.dumps(global_stats, indent=2)}
         
@@ -372,10 +343,13 @@ class RAGAgent:
         1. Analyze the user's request.
         2. Identify if the query requires specific data from the SPECIFIC RECORDS or overall trends from GLOBAL AGGREGATES.
         3. If the provided data does not contain the answer and you suspect older or more comprehensive data is needed, output EXACTLY the string `[TOOL_CALL: FETCH_MORE_HISTORY]` and nothing else.
-        4. If the user asks for a chart, graph, or visualization, output EXACTLY the string `[TOOL_CALL: GENERATE_PLOTLY]` on its own line, then provide your reasoning, and finally output valid Python Plotly code inside a ```python block.
-        5. Formulate your reasoning internally.
-        6. Provide the final response to the user.
+        4. If the user's prompt is explicitly or implicitly correcting your logic or providing a new rule, output EXACTLY the string `[TOOL_CALL: REMEMBER_RULE]` on its own line, followed by the concise rule to remember on the next line.
+        5. If the user asks for a chart, graph, or visualization, output EXACTLY the string `[TOOL_CALL: GENERATE_PLOTLY]` on its own line, then provide your reasoning, and finally output valid Python Plotly code inside a ```python block.
+        6. Formulate your reasoning internally.
+        7. Provide the final response to the user.
         
+        CRITICAL RULES:
+        - Order Logic: An `order_id` represents a single unique order. An order may contain multiple item lines. You must NEVER count item rows as a single order. When asked for 'total orders' or 'number of orders', you must use the total_orders from the GLOBAL AGGREGATES, NOT the row count.
         - The provided records prioritize the user's currently active page ("{active_section}"), followed by general site data.
         - Be concise, highly analytical, and professional. Use markdown formatting.
         If the user asks to compare datasets (e.g., "Is the highest returned item also my best-selling item?"), proactively cross-reference the top_returned_items and top_selling_items.
@@ -447,26 +421,54 @@ class RAGAgent:
             
         last_error = "❌ **AI Generation Failed:** No valid models available."
         
+        eval_system_prompt = "You are an objective AI judge. Evaluate the response against the rules. Reply ONLY with 'YES' if it violates the rules, or 'NO' if it complies."
+        
         for name, func in fallback_order:
             try:
-                res = func()
-                if res in ["MISSING_KEY", "LOCAL_ERROR"]:
-                    continue
-                    
-                if "[TOOL_CALL: FETCH_MORE_HISTORY]" in res and depth == 0:
-                    import streamlit as st
-                    st.toast("🤖 Data Pilot is fetching deeper history to answer your question...", icon="⏳")
-                    from BackEnd.services.hybrid_data_loader import load_cached_woocommerce_history
-                    deep_history_df = load_cached_woocommerce_history()
-                    if not deep_history_df.empty:
-                        deep_context = deep_history_df.copy()
-                        deep_context["_Data_Context"] = "Global Site Data (Deep History)"
-                        self._ingest_dataframe(deep_context, max_rows=1500)
-                        # Recursive call with depth 1
-                        return self.query(prompt, context_dfs, depth=1)
+                for attempt in range(2): # Max 2 attempts with LLM-as-a-Judge
+                    res = func(system_prompt, prompt)
+                    if res in ["MISSING_KEY", "LOCAL_ERROR"]:
+                        break # Move to next provider
                         
-                st.session_state.llm_response_cache[cache_key] = res
-                return res
+                    # LLM-as-a-Judge Validation
+                    eval_user_prompt = f"RULES:\n1. 'Total Orders' ALWAYS refers to a distinct count of unique `order_id` values.\n2. Do NOT use row counts when asked for order counts.\n\nRESPONSE TO EVALUATE:\n{res}\n\nDoes the response violate these rules? (YES/NO)"
+                    eval_res = func(eval_system_prompt, eval_user_prompt)
+                    
+                    if "YES" in str(eval_res).upper() and attempt == 0:
+                        logger.warning(f"[{name}] Validation failed on attempt {attempt+1}. Regenerating...")
+                        continue
+                        
+                    if "[TOOL_CALL: FETCH_MORE_HISTORY]" in res and depth == 0:
+                        import streamlit as st
+                        st.toast("🤖 Data Pilot is fetching deeper history to answer your question...", icon="⏳")
+                        from BackEnd.services.hybrid_data_loader import load_cached_woocommerce_history
+                        deep_history_df = load_cached_woocommerce_history()
+                        if not deep_history_df.empty:
+                            deep_context = deep_history_df.copy()
+                            deep_context["_Data_Context"] = "Global Site Data (Deep History)"
+                            self._ingest_dataframe(deep_context, max_rows=1500)
+                            # Recursive call with depth 1
+                            return self.query(prompt, context_dfs, depth=1)
+                            
+                    if "[TOOL_CALL: REMEMBER_RULE]" in res:
+                        import re
+                        import streamlit as st
+                        match = re.search(r'\[TOOL_CALL: REMEMBER_RULE\]\s*\n([^\n]*)', res)
+                        if match:
+                            new_rule = match.group(1).strip()
+                            if new_rule:
+                                from pathlib import Path
+                                knowledge_file = Path("BackEnd/data/pilot_knowledge.txt")
+                                knowledge_file.parent.mkdir(parents=True, exist_ok=True)
+                                with open(knowledge_file, "a", encoding="utf-8") as f:
+                                    f.write(f"- {new_rule}\n")
+                                if "llm_response_cache" in st.session_state:
+                                    st.session_state.llm_response_cache.clear()
+                                st.toast("🤖 Auto-learned a new rule from your correction.", icon="🧠")
+                        res = re.sub(r'\[TOOL_CALL: REMEMBER_RULE\]\s*\n[^\n]*\n?', '', res).strip()
+                            
+                    st.session_state.llm_response_cache[cache_key] = res
+                    return res
             except Exception as e:
                 last_error = f"❌ **{name} Error:** {str(e)}"
                 continue
