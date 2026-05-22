@@ -152,13 +152,15 @@ def get_category_for_sales(name) -> str:
     fs_keywords = ["full sleeve", "long sleeve", "fs", "l/s", "full-sleeve", "full"]
     is_shirt = _has_any(["shirt", "overshirt", "sh"], name_str)
     
+    is_formal_shirt = _has_any(["executive", "exective", "formal"], name_str) and not _has_any(["panjabi", "punjabi", "fatua", "kurta", "pant", "trouser", "shoe"], name_str)
+
     # Force certain types into FS Shirt even if 'full sleeve' is missing
-    if is_shirt and (_has_any(fs_keywords, name_str) or _has_any(["flannel", "denim", "oxford", "kaftan", "executive", "formal", "linen", "corduroy"], name_str)):
+    if (is_shirt and (_has_any(fs_keywords, name_str) or _has_any(["flannel", "denim", "oxford", "kaftan", "executive", "exective", "formal", "linen", "corduroy"], name_str))) or is_formal_shirt:
         if _has_any(["flannel"], name_str): return "FS Shirt - Flannel Shirt"
         if _has_any(["denim"], name_str): return "FS Shirt - Denim Shirt"
         if _has_any(["oxford"], name_str): return "FS Shirt - Oxford Shirt"
         if _has_any(["kaftan"], name_str): return "FS Shirt - Kaftan Shirt"
-        if _has_any(["executive", "formal"], name_str): return "FS Shirt - Formal Shirt"
+        if _has_any(["executive", "exective", "formal"], name_str): return "FS Shirt - Formal Shirt"
         if _has_any(["casual"], name_str): return "FS Shirt - FS Casual Shirt"
         return "FS Shirt"
 
