@@ -154,9 +154,8 @@ def setup_theme():
             font-weight: 800 !important;
             font-size: clamp(1.5rem, 4vw, 2.5rem) !important;
             color: var(--on-surface) !important;
-            white-space: nowrap !important;
-        overflow: hidden !important;
-        text-overflow: ellipsis !important;
+            white-space: normal !important;
+            word-break: break-word !important;
         }
 
 
@@ -619,11 +618,16 @@ def setup_theme():
             /* Mobile Tables */
             .stDataFrame {
                 font-size: 0.8rem !important;
-                width: 100% !important;
-                overflow-x: auto !important;
             }
-            .stDataFrame [data-testid="stTable"] {
-                min-width: 500px !important; /* Ensure content doesn't crush */
+            [data-testid="stTable"], 
+            [data-testid="stMarkdownContainer"] table {
+                display: block !important;
+                overflow-x: auto !important;
+                -webkit-overflow-scrolling: touch;
+            }
+            [data-testid="stTable"] table,
+            [data-testid="stMarkdownContainer"] table {
+                min-width: 600px !important; /* Prevent columns from being cut off */
             }
             /* Plotly Charts Mobile Scaling */
             .js-plotly-plot, .plotly, .js-plotly-plot .plot-container {
@@ -762,7 +766,7 @@ def setup_theme():
         
         /* Ensure content doesn't get hidden behind the fixed footer */
         .main .block-container {
-            padding-bottom: 80px !important;
+            padding-bottom: 120px !important;
         }
         </style>
         """,
