@@ -411,6 +411,11 @@ pytest tests/ -v
 
 ## 10. Recent Changes (Agent Context)
 
+### 2026-05-23: Sub-Category Reporting, Deep Dive Enhancements & Categorization Engine
+- **Sub-Category Reporting**: Implemented dynamic Excel export in `inventory.py` that computes Total Units, Total Sold, Returns, and Exchanges based on `shipped_date` windows. 
+- **Accurate Yield Calculation**: Upgraded `deep_dive.py` to calculate `Exchanged_Qty` and `Exchange_Loss`, integrating them into Net Sales to provide a 100% accurate unit-level P&L.
+- **Categorization Engine Logic**: Confirmed that DEEN-BI maps products using `BackEnd.core.categories.get_category_for_sales()`. This system actively parses **WooCommerce Product Names & SKUs** using smart NLP keyword detection (e.g., mapping "tank top" or "jersey" to T-Shirt) rather than relying on unreliable backend WooCommerce tags.
+
 ### 2026-04-24: Deprecated Operations Cleanup
 - **Removed Legacy Logistics Integrations**: Completely deleted `pathao_tab.py`, `processor.py`, and `wp_processor.py`.
 - **Removed Text Parsers**: Deleted `wp_tab.py` and `fuzzy_parser_tab.py` to reduce technical debt and simplify the operations module.

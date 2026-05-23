@@ -176,13 +176,266 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
                     return "color: #ef4444;"  # Red
             return ""
 
-        styler = display_df.style
+        def highlight_returns(row):
+            if row["Total Sold"] > 0 and (row.get("Returns", 0) / row["Total Sold"]) > 0.10:
+                return ['background-color: rgba(239, 68, 68, 0.15)'] * len(row)
+            return [''] * len(row)
+
+        styler = display_df.style.apply(highlight_returns, axis=1)
         styled_df = styler.map(color_trend, subset=["Sold Trend", "Rev Trend", "ASP Trend"]) if hasattr(styler, "map") else styler.applymap(color_trend, subset=["Sold Trend", "Rev Trend", "ASP Trend"])
         
         st.dataframe(styled_df, width="stretch", hide_index=True, column_config=col_cfg)
     else:
         st.info("Insufficient data for category matrix generation.")
+
+    st.divider()
+    st.markdown("#### 📊 Weekly Sub-Category Report")
     
+    report_window = st.selectbox(
+        "Select Reporting Period",
+        options=["Last 7 Days", "Last 15 Days", "Last 1 Month", "Last 1 Quarter"],
+        index=0,
+        key=KeyManager.get_key("deep_dive", "subcat_report_window")
+    )
+    
+    end_dt = date.today()
+    if report_window == "Last 7 Days":
+        start_dt = end_dt - timedelta(days=7)
+    elif report_window == "Last 15 Days":
+        start_dt = end_dt - timedelta(days=15)
+    elif report_window == "Last 1 Month":
+        start_dt = end_dt - timedelta(days=30)
+    else:
+        start_dt = end_dt - timedelta(days=90)
+
+    st.caption("Generates a unified report combining current inventory units, sales, and returns aggregated by Sub-Category.")
+    st.info(f"📅 **Reporting Period (Shipping Time):** {start_dt.strftime('%B %d, %Y')} to {end_dt.strftime('%B %d, %Y')}")
+    
+    if st.button("Generate Sub-Category Report", use_container_width=True, key=KeyManager.get_key("deep_dive", "gen_weekly_subcat")):
+        with st.spinner("Compiling sub-category report..."):
+            # 1. Total Units (Inventory)
+            inventory = stock_df.copy() if stock_df is not None else pd.DataFrame()
+            subcat_units = pd.DataFrame()
+            if not inventory.empty:
+                if "Sub Category" not in inventory.columns:
+                    if "Category" not in inventory.columns:
+                        names = inventory.get("Name", pd.Series(dtype=str)).fillna("").astype(str)
+                        skus = inventory.get("SKU", pd.Series(dtype=str)).fillna("").astype(str)
+                        from BackEnd.core.categories import get_category_for_sales
+                        inventory["Category"] = [get_category_for_sales(n + " " + s) for n, s in zip(names, skus)]
+                    inventory["Sub Category"] = inventory["Category"].apply(get_subcategory_name)
+                
+                inventory["Stock Quantity"] = pd.to_numeric(inventory.get("Stock Quantity", 0), errors="coerce").fillna(0)
+                subcat_units = inventory.groupby("Sub Category")["Stock Quantity"].sum().reset_index()
+                subcat_units.rename(columns={"Sub Category": "Sub-Category", "Stock Quantity": "Total_Units"}, inplace=True)
+            
+            # 2. Total Sold (Sales) using Shipping Time
+            total_orders_in_period = 0
+            sales_qty = pd.DataFrame()
+            sales_source = df_sales
+            
+            if sales_source is not None and not sales_source.empty and "sku" in sales_source.columns and "qty" in sales_source.columns:
+                sales_df_copy = sales_source.copy()
+                
+                if "shipped_date" in sales_df_copy.columns:
+                    sales_df_copy["shipped_date"] = pd.to_datetime(sales_df_copy["shipped_date"], errors="coerce")
+                    sales_mask = (sales_df_copy["shipped_date"].dt.date >= start_dt) & (sales_df_copy["shipped_date"].dt.date <= end_dt)
+                    sales_df_copy = sales_df_copy[sales_mask]
+                    
+                if "order_id" in sales_df_copy.columns:
+                    total_orders_in_period = sales_df_copy["order_id"].nunique()
+
+                if not inventory.empty and "SKU" in inventory.columns:
+                    sku_to_subcat = {str(k).upper().strip(): v for k, v in inventory.drop_duplicates("SKU").set_index("SKU")["Sub Category"].to_dict().items()}
+                    sales_df_copy["Sub Category"] = sales_df_copy["sku"].astype(str).str.upper().str.strip().map(sku_to_subcat)
+                else:
+                    sales_df_copy["Sub Category"] = None
+                
+                missing_subcat = sales_df_copy["Sub Category"].isna()
+                if missing_subcat.any():
+                    names = sales_df_copy.loc[missing_subcat, "item_name"].fillna("").astype(str)
+                    skus = sales_df_copy.loc[missing_subcat, "sku"].fillna("").astype(str)
+                    from BackEnd.core.categories import get_category_for_sales
+                    cats = [get_category_for_sales(n + " " + s) for n, s in zip(names, skus)]
+                    sales_df_copy.loc[missing_subcat, "Sub Category"] = [get_subcategory_name(c) for c in cats]
+                    
+                sales_qty = sales_df_copy.groupby("Sub Category")["qty"].sum().reset_index()
+                sales_qty.rename(columns={"Sub Category": "Sub-Category", "qty": "Total_Sold"}, inplace=True)
+                
+            # 3. Total Returned
+            returns_qty = pd.DataFrame()
+            exchange_qty = pd.DataFrame()
+            tot_exchanged = 0
+            
+            returns_data = st.session_state.get("returns_data", pd.DataFrame())
+            if returns_data.empty:
+                try:
+                    from BackEnd.services.returns_tracker import load_returns_data, get_current_sync_window
+                    sync_window = get_current_sync_window()
+                    returns_data = load_returns_data(sync_window=sync_window, sales_df=df_sales)
+                    st.session_state["returns_data"] = returns_data
+                except Exception:
+                    pass
+                    
+            filtered_returns = returns_data.copy()
+            if not filtered_returns.empty and "date" in filtered_returns.columns:
+                filtered_returns["date"] = pd.to_datetime(filtered_returns["date"], errors="coerce")
+                mask = (filtered_returns["date"].dt.date >= start_dt) & (filtered_returns["date"].dt.date <= end_dt)
+                filtered_returns = filtered_returns[mask]
+
+            if not filtered_returns.empty and "returned_items" in filtered_returns.columns:
+                ret_items = []
+                exch_items = []
+                for _, row in filtered_returns.iterrows():
+                    issue_type = str(row.get("issue_type", ""))
+                    
+                    if issue_type == "Exchange":
+                        items = row.get("returned_items", [])
+                        if isinstance(items, list):
+                            for item in items:
+                                if isinstance(item, dict):
+                                    tot_exchanged += int(pd.to_numeric(item.get("qty", 1), errors="coerce") or 1)
+                                    exch_items.append({
+                                        "sku": item.get("sku", ""),
+                                        "name": item.get("name", ""),
+                                        "qty": int(pd.to_numeric(item.get("qty", 1), errors="coerce") or 1)
+                                    })
+                                    
+                    if issue_type in ["Paid Return", "Non Paid Return", "Partial"]:
+                        items = row.get("returned_items", [])
+                        if not isinstance(items, list): continue
+                        for item in items:
+                            if not isinstance(item, dict): continue
+                            ret_items.append({
+                                "sku": item.get("sku", ""),
+                                "name": item.get("name", ""),
+                                "qty": int(pd.to_numeric(item.get("qty", 1), errors="coerce") or 1)
+                            })
+                
+                def map_subcats_to_items(items_list):
+                    df_res = pd.DataFrame(items_list)
+                    if not inventory.empty and "SKU" in inventory.columns:
+                        sku_to_subcat = {str(k).upper().strip(): v for k, v in inventory.drop_duplicates("SKU").set_index("SKU")["Sub Category"].to_dict().items()}
+                        df_res["Sub Category"] = df_res["sku"].astype(str).str.upper().str.strip().map(sku_to_subcat)
+                    else:
+                        df_res["Sub Category"] = None
+                    
+                    missing = df_res["Sub Category"].isna()
+                    if missing.any():
+                        names = df_res.loc[missing, "name"].fillna("").astype(str)
+                        skus = df_res.loc[missing, "sku"].fillna("").astype(str)
+                        from BackEnd.core.categories import get_category_for_sales
+                        cats = [get_category_for_sales(n + " " + s) for n, s in zip(names, skus)]
+                        df_res.loc[missing, "Sub Category"] = [get_subcategory_name(c) for c in cats]
+                    return df_res.groupby("Sub Category")["qty"].sum().reset_index()
+
+                if ret_items:
+                    returns_qty = map_subcats_to_items(ret_items)
+                    returns_qty.rename(columns={"Sub Category": "Sub-Category", "qty": "Total_Returned"}, inplace=True)
+                    
+                if exch_items:
+                    exchange_qty = map_subcats_to_items(exch_items)
+                    exchange_qty.rename(columns={"Sub Category": "Sub-Category", "qty": "Total_Exchanged"}, inplace=True)
+
+            # 4. Merge Data
+            all_subcats = set(subcat_units["Sub-Category"]) if not subcat_units.empty else set()
+            if not sales_qty.empty: all_subcats.update(sales_qty["Sub-Category"])
+            if not returns_qty.empty: all_subcats.update(returns_qty["Sub-Category"])
+            if not exchange_qty.empty: all_subcats.update(exchange_qty["Sub-Category"])
+            
+            report_df = pd.DataFrame({"Sub-Category": sorted(list(all_subcats))})
+            if not subcat_units.empty: report_df = report_df.merge(subcat_units, on="Sub-Category", how="left")
+            else: report_df["Total_Units"] = 0
+            if not sales_qty.empty: report_df = report_df.merge(sales_qty, on="Sub-Category", how="left")
+            else: report_df["Total_Sold"] = 0
+            if not returns_qty.empty: report_df = report_df.merge(returns_qty, on="Sub-Category", how="left")
+            else: report_df["Total_Returned"] = 0
+            if not exchange_qty.empty: report_df = report_df.merge(exchange_qty, on="Sub-Category", how="left")
+            else: report_df["Total_Exchanged"] = 0
+            
+            report_df.fillna(0, inplace=True)
+            for col in ["Total_Units", "Total_Sold", "Total_Returned", "Total_Exchanged"]:
+                if col in report_df.columns:
+                    report_df[col] = report_df[col].astype(int)
+                
+            report_df["Total_Net_Sold"] = report_df["Total_Sold"] - report_df["Total_Returned"] - report_df["Total_Exchanged"]
+            
+            cols_order = ["Sub-Category", "Total_Units", "Total_Sold", "Total_Net_Sold", "Total_Returned", "Total_Exchanged"]
+            report_df = report_df[[c for c in cols_order if c in report_df.columns]]
+
+            tot_sold = int(report_df["Total_Sold"].sum())
+            tot_returned = int(report_df["Total_Returned"].sum())
+            net_sold = int(report_df["Total_Net_Sold"].sum())
+            tot_exchanged_total = int(report_df["Total_Exchanged"].sum())
+            ret_rate = (tot_returned / tot_sold * 100) if tot_sold > 0 else 0.0
+            st.success(f"📊 **Period Summary:** **{total_orders_in_period:,}** Total Orders | **{tot_sold:,}** Gross Sold | **{net_sold:,}** Net Sold | **{tot_returned:,}** Items Returned | **{tot_exchanged_total:,}** Items Exchanged | **{ret_rate:.1f}%** Return Rate")
+
+            st.dataframe(report_df, use_container_width=True, hide_index=True)
+            
+            summary_metrics = {
+                "Total Orders": total_orders_in_period,
+                "Gross Items Sold": tot_sold,
+                "Net Items Sold": net_sold,
+                "Total Items Returned": tot_returned,
+                "Total Items Exchanged": tot_exchanged_total,
+                "Return Rate (%)": f"{ret_rate:.1f}%",
+                "Report Period": f"{start_dt.strftime('%B %d, %Y')} to {end_dt.strftime('%B %d, %Y')}",
+                "Generated On": date.today().strftime('%Y-%m-%d')
+            }
+            
+            import io
+            buffer = io.BytesIO()
+            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                summary_df = pd.DataFrame(list(summary_metrics.items()), columns=["Metric", "Value"])
+                summary_df.to_excel(writer, sheet_name="Executive Summary", index=False)
+                report_df.to_excel(writer, sheet_name="Sub-Category Report", index=False)
+                
+                top_5_df = report_df.sort_values("Total_Sold", ascending=False).head(5)
+                if not top_5_df.empty:
+                    top_5_df.to_excel(writer, sheet_name="Chart Data", index=False)
+                    
+                    workbook = writer.book
+                    ws_summary = writer.sheets["Executive Summary"]
+                    ws_report = writer.sheets["Sub-Category Report"]
+                    ws_data = writer.sheets["Chart Data"]
+                    ws_data.hide()
+                    
+                    header_fmt = workbook.add_format({'bold': True, 'bg_color': '#4F46E5', 'font_color': 'white'})
+                    
+                    for col_num, value in enumerate(report_df.columns.values):
+                        ws_report.write(0, col_num, value, header_fmt)
+                        ws_report.set_column(col_num, col_num, 16)
+                    
+                    for col_num, value in enumerate(summary_df.columns.values):
+                        ws_summary.write(0, col_num, value, header_fmt)
+                    ws_summary.set_column(0, 0, 25)
+                    ws_summary.set_column(1, 1, 35)
+                    
+                    chart = workbook.add_chart({'type': 'column'})
+                    chart.add_series({
+                        'name':       'Total Sold',
+                        'categories': ['Chart Data', 1, 0, len(top_5_df), 0],
+                        'values':     ['Chart Data', 1, 2, len(top_5_df), 2],
+                        'fill':       {'color': '#4F46E5'}
+                    })
+                    chart.set_title({'name': 'Top 5 Sub-Categories by Sales'})
+                    chart.set_x_axis({'name': 'Sub-Category'})
+                    chart.set_y_axis({'name': 'Items Sold'})
+                    chart.set_style(11)
+                    
+                    ws_summary.insert_chart('D2', chart, {'x_scale': 1.2, 'y_scale': 1.2})
+            
+            excel_data = buffer.getvalue()
+            
+            st.download_button(
+                label="📥 Download Sub-Category Report (Excel)",
+                data=excel_data,
+                file_name=f"Sub_Category_Report_{date.today().strftime('%Y%m%d')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key=KeyManager.get_key("deep_dive", "dl_subcat_report"),
+                use_container_width=True
+            )
+
     # FILTER CONTROL CENTER
     with st.expander("🛠️ Advanced Cluster Filters", expanded=True):
         st.markdown("**📦 Category & Operations**")
