@@ -484,6 +484,9 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, d
         if active_prod:
             export_inv["_display_name"] = export_inv["_clean_name"] + " [" + export_inv["SKU"].astype(str) + "]"
             export_inv = export_inv[export_inv["_display_name"] == active_prod]
+            
+        csv_data = export_inv.to_csv(index=False).encode('utf-8')
+        st.download_button("📥 Download Inventory Snapshot", data=csv_data, file_name=f"inventory_snapshot_{date.today()}.csv", mime="text/csv", use_container_width=True)
 
 
 def _get_global_date_range() -> tuple[date, date]:

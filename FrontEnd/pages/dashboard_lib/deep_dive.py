@@ -5,6 +5,7 @@ from FrontEnd.components import ui
 from BackEnd.core.categories import parse_sku_variants, get_clean_product_name, get_master_category_list, format_category_label, get_subcategory_name, classify_velocity_trend, get_densed_name
 from BackEnd.core.geo import get_region_display
 from FrontEnd.utils.key_manager import KeyManager
+from datetime import date, timedelta
 
 def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev: pd.DataFrame = None, window_label: str = "period"):
 
@@ -56,27 +57,55 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
         # Safely cross-reference return loss per line item to calculate category Net Yield
         if "Return_Loss" not in df_sales.columns:
             returns_df = st.session_state.get("returns_data", pd.DataFrame())
+            if returns_df.empty:
+                try:
+                    from BackEnd.services.returns_tracker import load_returns_data, get_current_sync_window
+                    sync_window = get_current_sync_window()
+                    returns_df = load_returns_data(sync_window=sync_window, sales_df=df_sales)
+                    st.session_state["returns_data"] = returns_df
+                except Exception:
+                    pass
+                    
             order_sku_returns = {}
+            order_sku_returns_qty = {}
+            order_sku_exchanges = {}
             if not returns_df.empty and "order_id" in returns_df.columns:
                 for _, r_row in returns_df.iterrows():
-                    if r_row.get("issue_type") in ["Paid Return", "Non Paid Return", "Partial"]:
+                    issue_type = r_row.get("issue_type")
+                    if issue_type in ["Paid Return", "Non Paid Return", "Partial"]:
                         items = r_row.get("returned_items", [])
-                        oid = str(r_row.get("order_id", ""))
+                        oid = str(r_row.get("order_id", "")).strip()
                         if isinstance(items, list):
                             for item in items:
                                 if isinstance(item, dict):
-                                    sku = str(item.get("sku", "N/A"))
-                                    impact = item.get("revenue_impact", 0)
+                                    sku = str(item.get("sku", "N/A")).strip().upper()
+                                    impact = float(item.get("revenue_impact", 0) or 0.0)
+                                    qty = int(pd.to_numeric(item.get("qty", 1), errors="coerce") or 1)
                                     key = f"{oid}_{sku}"
-                                    order_sku_returns[key] = order_sku_returns.get(key, 0) + impact
+                                    order_sku_returns[key] = order_sku_returns.get(key, 0.0) + impact
+                                    order_sku_returns_qty[key] = order_sku_returns_qty.get(key, 0) + qty
+                    elif issue_type == "Exchange":
+                        items = r_row.get("returned_items", [])
+                        oid = str(r_row.get("order_id", "")).strip()
+                        if isinstance(items, list):
+                            for item in items:
+                                if isinstance(item, dict):
+                                    sku = str(item.get("sku", "N/A")).strip().upper()
+                                    qty = int(pd.to_numeric(item.get("qty", 1), errors="coerce") or 1)
+                                    key = f"{oid}_{sku}"
+                                    order_sku_exchanges[key] = order_sku_exchanges.get(key, 0) + qty
             
-            keys = df_sales["order_id"].astype(str) + "_" + df_sales.get("sku", "").astype(str)
+            keys = df_sales["order_id"].astype(str).str.strip() + "_" + df_sales.get("sku", "").astype(str).str.strip().str.upper()
             df_sales["Return_Loss"] = keys.map(order_sku_returns).fillna(0.0)
+            df_sales["Returned_Qty"] = keys.map(order_sku_returns_qty).fillna(0.0)
+            df_sales["Exchanged_Qty"] = keys.map(order_sku_exchanges).fillna(0.0)
 
         curr_agg = df_sales.groupby("Category").agg(
             Total_Sold=("qty", "sum"),
             Total_Revenue=("item_revenue", "sum"),
-            Return_Loss=("Return_Loss", "sum")
+            Return_Loss=("Return_Loss", "sum"),
+            Returned_Qty=("Returned_Qty", "sum"),
+            Exchanged_Qty=("Exchanged_Qty", "sum")
         ).reset_index()
         curr_agg["ASP"] = (curr_agg["Total_Revenue"] / curr_agg["Total_Sold"].replace(0, 1)).fillna(0)
         curr_agg["Net_Yield"] = ((curr_agg["Total_Revenue"] - curr_agg["Return_Loss"]) / curr_agg["Total_Revenue"].replace(0, 1) * 100).fillna(100).clip(lower=0, upper=100)
@@ -117,8 +146,10 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
         
         merged = merged.sort_values(["Total_Revenue", "Master Category"], ascending=[False, True])
         
-        display_df = merged[["Master Category", "Sub Category", "Total_Sold", "Sold Trend", "Total_Revenue", "Rev Trend", "ASP", "ASP Trend", "Net_Yield"]].rename(columns={
+        display_df = merged[["Master Category", "Sub Category", "Total_Sold", "Returned_Qty", "Exchanged_Qty", "Sold Trend", "Total_Revenue", "Rev Trend", "ASP", "ASP Trend", "Net_Yield"]].rename(columns={
             "Total_Sold": "Total Sold",
+            "Returned_Qty": "Returns",
+            "Exchanged_Qty": "Exchanges",
             "Total_Revenue": "Total Revenue",
             "Net_Yield": "Net Yield %"
         })
@@ -127,6 +158,8 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
             "Master Category": st.column_config.TextColumn("Master Category", width="small"),
             "Sub Category": st.column_config.TextColumn("Sub Category", width="small"),
             "Total Sold": st.column_config.NumberColumn("Total Sold", format="%d"),
+            "Returns": st.column_config.NumberColumn("Returns", format="%d"),
+            "Exchanges": st.column_config.NumberColumn("Exchanges", format="%d"),
             "Sold Trend": st.column_config.TextColumn(f"Sold vs Prev {clean_window}"),
             "Total Revenue": st.column_config.NumberColumn("Total Revenue", format="৳%d"),
             "Rev Trend": st.column_config.TextColumn(f"Rev vs Prev {clean_window}"),
@@ -320,6 +353,9 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
         from datetime import datetime
         
         cluster_return_loss = w_df["Return_Loss"].sum() if "Return_Loss" in w_df.columns else 0
+        if "Exchanged_Qty" in w_df.columns:
+            w_df["Exchange_Loss"] = w_df["Exchanged_Qty"] * (w_df["item_revenue"] / w_df["qty"].replace(0, 1))
+        cluster_exchange_loss = w_df["Exchange_Loss"].sum() if "Exchange_Loss" in w_df.columns else 0
         cluster_net_rev = total_revenue - cluster_return_loss
         
         # 1. Prepare Strategic Summary Sheet
@@ -327,6 +363,7 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
             "Metric": [
                 "Gross Revenue", 
                 "Return Loss",
+                "Exchange Loss",
                 "Net Revenue",
                 "Total Orders", 
                 "Total Units", 
@@ -340,6 +377,7 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
             "Value": [
                 f"৳{total_revenue:,.0f}", 
                 f"৳{cluster_return_loss:,.0f}",
+                f"৳{cluster_exchange_loss:,.0f}",
                 f"৳{cluster_net_rev:,.0f}",
                 total_orders_in_cluster,
                 total_items_sold, 
@@ -352,6 +390,7 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
             ],
             "Trend vs Prev": [
                 d_rev_label,
+                "-",
                 "-",
                 "-",
                 "-",
@@ -384,16 +423,20 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
             agg_cols = {"Units_Sold": ("qty", "sum"), "Gross_Revenue": ("item_revenue", "sum")}
             if "Return_Loss" in w_df.columns:
                 agg_cols["Return_Loss"] = ("Return_Loss", "sum")
+            if "Exchange_Loss" in w_df.columns:
+                agg_cols["Exchange_Loss"] = ("Exchange_Loss", "sum")
                 
             sku_perf_df = w_df.groupby(["sku", "item_name"]).agg(**agg_cols).reset_index()
             
             if "Return_Loss" not in sku_perf_df.columns:
                 sku_perf_df["Return_Loss"] = 0.0
+            if "Exchange_Loss" not in sku_perf_df.columns:
+                sku_perf_df["Exchange_Loss"] = 0.0
                 
             sku_perf_df["Net_Revenue"] = sku_perf_df["Gross_Revenue"] - sku_perf_df["Return_Loss"]
             sku_perf_df = sku_perf_df.sort_values("Gross_Revenue", ascending=False)
             
-            for col in ["Gross_Revenue", "Return_Loss", "Net_Revenue"]:
+            for col in ["Gross_Revenue", "Return_Loss", "Exchange_Loss", "Net_Revenue"]:
                 sku_perf_df[col] = sku_perf_df[col].apply(lambda x: f"৳{x:,.2f}")
 
         additional_sheets = {"Summary": summary_df, "AI Insights": ai_df}
@@ -521,10 +564,16 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
         cat_intell = w_df.copy()
         cat_intell["Sub-Cat"] = cat_intell["Category"].apply(get_subcategory_name)
         
-        cat_agg = cat_intell.groupby("Sub-Cat").agg(
-            Revenue=("item_revenue", "sum"),
-            Units=("qty", "sum")
-        ).reset_index().sort_values("Revenue", ascending=False)
+        agg_dict = {
+            "Revenue": ("item_revenue", "sum"),
+            "Units": ("qty", "sum")
+        }
+        if "Returned_Qty" in cat_intell.columns:
+            agg_dict["Returns"] = ("Returned_Qty", "sum")
+        if "Exchanged_Qty" in cat_intell.columns:
+            agg_dict["Exchanges"] = ("Exchanged_Qty", "sum")
+            
+        cat_agg = cat_intell.groupby("Sub-Cat").agg(**agg_dict).reset_index().sort_values("Revenue", ascending=False)
         
         with occ1:
             fig_cat_pie = px.pie(cat_agg, values="Revenue", names="Sub-Cat", title="Revenue Mix by Sub-Segment",
@@ -532,9 +581,18 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
             st.plotly_chart(fig_cat_pie, width="stretch", key=KeyManager.get_key("deep_dive", "rev_mix_subcat_pie"))
             
         with occ2:
-            fig_cat_bar = px.bar(cat_agg.sort_values("Units", ascending=True), x="Units", y="Sub-Cat", 
-                                 title="Unit Volume per Sub-Segment",
-                                 orientation='h', color="Units", color_continuous_scale="Agsunset")
+            plot_cols = ["Units"]
+            color_seq = ["#3b82f6"]
+            if "Returns" in cat_agg.columns:
+                plot_cols.append("Returns")
+                color_seq.append("#ef4444")
+            if "Exchanges" in cat_agg.columns:
+                plot_cols.append("Exchanges")
+                color_seq.append("#8b5cf6")
+                
+            fig_cat_bar = px.bar(cat_agg.sort_values("Units", ascending=True), x=plot_cols, y="Sub-Cat", 
+                                 title="Unit Volume, Returns & Exchanges per Sub-Segment",
+                                 orientation='h', color_discrete_sequence=color_seq)
             st.plotly_chart(fig_cat_bar, width="stretch", key=KeyManager.get_key("deep_dive", "unit_vol_subcat_bar"))
 
     with cluster_t2:
