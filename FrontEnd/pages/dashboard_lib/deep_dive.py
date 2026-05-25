@@ -50,9 +50,14 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
     clean_window = window_label.replace('last ', '').title() if window_label else "Period"
 
     # CATEGORY PERFORMANCE MATRIX
-    st.markdown("**📊 Category Performance Matrix**")
-    st.caption(f"Master and Sub-categories ranked by revenue, comparing current vs previous {clean_window.lower()}.")
+    c_mat1, c_mat2 = st.columns([3, 1])
+    with c_mat1:
+        st.markdown("**📊 Category Performance Matrix**")
+        st.caption(f"Categories ranked by revenue, comparing current vs previous {clean_window.lower()}.")
+    with c_mat2:
+        show_master_only = st.toggle("Show Master Category Only", value=False, key=KeyManager.get_key("deep_dive", "cat_matrix_toggle"))
 
+    display_df = pd.DataFrame()
     if not df_sales.empty:
         # Safely cross-reference return loss per line item to calculate category Net Yield
         if "Return_Loss" not in df_sales.columns:
@@ -102,7 +107,11 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
             df_sales["Returned_Qty"] = keys.map(order_sku_returns_qty).fillna(0.0)
             df_sales["Exchanged_Qty"] = keys.map(order_sku_exchanges).fillna(0.0)
 
-        curr_agg = df_sales.groupby("Category").agg(
+        df_sales_matrix = df_sales.copy()
+        if show_master_only:
+            df_sales_matrix["Category"] = df_sales_matrix["Category"].apply(lambda x: str(x).split(" - ")[0] if " - " in str(x) else str(x))
+
+        curr_agg = df_sales_matrix.groupby("Category").agg(
             Total_Sold=("qty", "sum"),
             Total_Revenue=("item_revenue", "sum"),
             Return_Loss=("Return_Loss", "sum"),
@@ -113,7 +122,11 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
         curr_agg["Net_Yield"] = ((curr_agg["Total_Revenue"] - curr_agg["Return_Loss"]) / curr_agg["Total_Revenue"].replace(0, 1) * 100).fillna(100).clip(lower=0, upper=100)
         
         if df_prev is not None and not df_prev.empty:
-            prev_agg = df_prev.groupby("Category").agg(
+            df_prev_matrix = df_prev.copy()
+            if show_master_only:
+                df_prev_matrix["Category"] = df_prev_matrix["Category"].apply(lambda x: str(x).split(" - ")[0] if " - " in str(x) else str(x))
+
+            prev_agg = df_prev_matrix.groupby("Category").agg(
                 Prev_Sold=("qty", "sum"),
                 Prev_Revenue=("item_revenue", "sum")
             ).reset_index()
@@ -143,12 +156,21 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
         merged["Rev Trend"] = merged.apply(lambda x: format_trend(x["Total_Revenue"], x["Prev_Revenue"]), axis=1)
         merged["ASP Trend"] = merged.apply(lambda x: format_trend(x["ASP"], x["Prev_ASP"]), axis=1)
         
+        merged["Return %"] = (merged["Returned_Qty"] / merged["Total_Sold"].replace(0, 1)) * 100
+        merged["Exchange %"] = (merged["Exchanged_Qty"] / merged["Total_Sold"].replace(0, 1)) * 100
+        
         merged["Master Category"] = merged["Category"].apply(lambda x: str(x).split(" - ")[0] if " - " in str(x) else str(x))
-        merged["Sub Category"] = merged["Category"].apply(get_subcategory_name)
+        if not show_master_only:
+            merged["Sub Category"] = merged["Category"].apply(get_subcategory_name)
         
         merged = merged.sort_values(["Total_Revenue", "Master Category"], ascending=[False, True])
         
-        display_df = merged[["Master Category", "Sub Category", "Total_Sold", "Returned_Qty", "Exchanged_Qty", "Sold Trend", "Total_Revenue", "Rev Trend", "ASP", "ASP Trend", "Net_Yield"]].rename(columns={
+        cols_to_disp = ["Master Category"]
+        if not show_master_only:
+            cols_to_disp.append("Sub Category")
+        cols_to_disp.extend(["Total_Sold", "Returned_Qty", "Return %", "Exchanged_Qty", "Exchange %", "Sold Trend", "Total_Revenue", "Rev Trend", "ASP", "ASP Trend", "Net_Yield"])
+
+        display_df = merged[cols_to_disp].rename(columns={
             "Total_Sold": "Total Sold",
             "Returned_Qty": "Returns",
             "Exchanged_Qty": "Exchanges",
@@ -158,10 +180,11 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
         
         col_cfg = {
             "Master Category": st.column_config.TextColumn("Master Category", width="small"),
-            "Sub Category": st.column_config.TextColumn("Sub Category", width="small"),
             "Total Sold": st.column_config.NumberColumn("Total Sold", format="%d"),
             "Returns": st.column_config.NumberColumn("Returns", format="%d"),
+            "Return %": st.column_config.NumberColumn("Return %", format="%.1f%%"),
             "Exchanges": st.column_config.NumberColumn("Exchanges", format="%d"),
+            "Exchange %": st.column_config.NumberColumn("Exchange %", format="%.1f%%"),
             "Sold Trend": st.column_config.TextColumn(f"Sold vs Prev {clean_window}"),
             "Total Revenue": st.column_config.NumberColumn("Total Revenue", format="৳%d"),
             "Rev Trend": st.column_config.TextColumn(f"Rev vs Prev {clean_window}"),
@@ -169,6 +192,9 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
             "ASP Trend": st.column_config.TextColumn(f"ASP vs Prev {clean_window}"),
             "Net Yield %": st.column_config.ProgressColumn("Net Yield %", format="%.1f%%", min_value=0, max_value=100),
         }
+        
+        if not show_master_only:
+            col_cfg["Sub Category"] = st.column_config.TextColumn("Sub Category", width="small")
         
         def color_trend(val):
             if isinstance(val, str):
@@ -178,13 +204,25 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
                     return "color: #ef4444;"  # Red
             return ""
 
-        def highlight_returns(row):
-            if row["Total Sold"] > 0 and (row.get("Returns", 0) / row["Total Sold"]) > 0.10:
-                return ['background-color: rgba(239, 68, 68, 0.15)'] * len(row)
-            return [''] * len(row)
+        def color_high_return(val):
+            if isinstance(val, (int, float)) and val > 10.0:
+                return "color: #ef4444; font-weight: bold; background-color: rgba(239, 68, 68, 0.15);"
+            return ""
 
-        styler = display_df.style.apply(highlight_returns, axis=1)
-        styled_df = styler.map(color_trend, subset=["Sold Trend", "Rev Trend", "ASP Trend"]) if hasattr(styler, "map") else styler.applymap(color_trend, subset=["Sold Trend", "Rev Trend", "ASP Trend"])
+        def color_high_exchange(val):
+            if isinstance(val, (int, float)) and val > 5.0:
+                return "color: #f97316; font-weight: bold; background-color: rgba(249, 115, 22, 0.15);"
+            return ""
+
+        styler = display_df.style
+        if hasattr(styler, "map"):
+            styled_df = styler.map(color_trend, subset=["Sold Trend", "Rev Trend", "ASP Trend"])
+            styled_df = styled_df.map(color_high_return, subset=["Return %"])
+            styled_df = styled_df.map(color_high_exchange, subset=["Exchange %"])
+        else:
+            styled_df = styler.applymap(color_trend, subset=["Sold Trend", "Rev Trend", "ASP Trend"])
+            styled_df = styled_df.applymap(color_high_return, subset=["Return %"])
+            styled_df = styled_df.applymap(color_high_exchange, subset=["Exchange %"])
         
         st.dataframe(styled_df, width="stretch", hide_index=True, column_config=col_cfg)
     else:
