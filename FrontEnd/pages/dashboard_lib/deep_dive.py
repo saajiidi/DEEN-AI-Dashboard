@@ -229,29 +229,23 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
         st.info("Insufficient data for category matrix generation.")
 
     st.divider()
-    st.markdown("**📊 Weekly Sub-Category Report**")
+    rep_c1, rep_c2 = st.columns([3, 1])
+    with rep_c1:
+        st.markdown("**📊 Category Report Export**")
+    with rep_c2:
+        report_show_master = st.toggle("Show Master Category Only", value=False, key=KeyManager.get_key("deep_dive", "rep_master_toggle"))
     
-    report_window = st.selectbox(
-        "Select Reporting Period",
-        options=["Last 7 Days", "Last 15 Days", "Last 1 Month", "Last 1 Quarter"],
-        index=0,
-        key=KeyManager.get_key("deep_dive", "subcat_report_window")
-    )
-    
-    end_dt = date.today()
-    if report_window == "Last 7 Days":
-        start_dt = end_dt - timedelta(days=7)
-    elif report_window == "Last 15 Days":
-        start_dt = end_dt - timedelta(days=15)
-    elif report_window == "Last 1 Month":
-        start_dt = end_dt - timedelta(days=30)
+    if not df_sales.empty and "order_date" in df_sales.columns:
+        start_dt = pd.to_datetime(df_sales["order_date"]).min().date()
+        end_dt = pd.to_datetime(df_sales["order_date"]).max().date()
     else:
-        start_dt = end_dt - timedelta(days=90)
+        end_dt = date.today()
+        start_dt = end_dt - timedelta(days=30)
 
-    st.caption("Generates a unified report combining current inventory units, sales, and returns aggregated by Sub-Category.")
-    st.info(f"📅 **Reporting Period (Shipping Time):** {start_dt.strftime('%B %d, %Y')} to {end_dt.strftime('%B %d, %Y')}")
+    st.caption("Generates a unified report combining current inventory units, sales, and returns aggregated by category for the global period.")
+    st.info(f"📅 **Global Reporting Period:** {start_dt.strftime('%B %d, %Y')} to {end_dt.strftime('%B %d, %Y')}")
     
-    if st.button("Generate Sub-Category Report", use_container_width=True, key=KeyManager.get_key("deep_dive", "gen_weekly_subcat")):
+    if st.button("Generate Category Report", use_container_width=True, key=KeyManager.get_key("deep_dive", "gen_global_cat_report")):
         with st.spinner("Compiling sub-category report..."):
             # 1. Total Units (Inventory)
             inventory = stock_df.copy() if stock_df is not None else pd.DataFrame()
@@ -262,13 +256,16 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
                 skus = inventory.get("SKU", pd.Series(dtype=str)).fillna("").astype(str)
                 from BackEnd.core.categories import get_category_for_sales
                 inventory["Category"] = [get_category_for_sales(n + " " + s) for n, s in zip(names, skus)]
-                inventory["Sub Category"] = inventory["Category"].apply(get_subcategory_name)
+                if report_show_master:
+                    inventory["Sub Category"] = inventory["Category"].apply(lambda x: str(x).split(" - ")[0] if " - " in str(x) else str(x))
+                else:
+                    inventory["Sub Category"] = inventory["Category"].apply(get_subcategory_name)
                 
                 inventory["Stock Quantity"] = pd.to_numeric(inventory.get("Stock Quantity", 0), errors="coerce").fillna(0)
                 subcat_units = inventory.groupby("Sub Category")["Stock Quantity"].sum().reset_index()
                 subcat_units.rename(columns={"Sub Category": "Sub-Category", "Stock Quantity": "Total_Units"}, inplace=True)
             
-            # 2. Total Sold (Sales) using Shipping Time
+            # 2. Total Sold (Sales) using Global Window
             total_orders_in_period = 0
             sales_qty = pd.DataFrame()
             sales_source = df_sales
@@ -276,11 +273,6 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
             if sales_source is not None and not sales_source.empty and "sku" in sales_source.columns and "qty" in sales_source.columns:
                 sales_df_copy = sales_source.copy()
                 
-                if "shipped_date" in sales_df_copy.columns:
-                    sales_df_copy["shipped_date"] = pd.to_datetime(sales_df_copy["shipped_date"], errors="coerce")
-                    sales_mask = (sales_df_copy["shipped_date"].dt.date >= start_dt) & (sales_df_copy["shipped_date"].dt.date <= end_dt)
-                    sales_df_copy = sales_df_copy[sales_mask]
-                    
                 if "order_id" in sales_df_copy.columns:
                     total_orders_in_period = sales_df_copy["order_id"].nunique()
 
@@ -296,7 +288,10 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
                     skus = sales_df_copy.loc[missing_subcat, "sku"].fillna("").astype(str)
                     from BackEnd.core.categories import get_category_for_sales
                     cats = [get_category_for_sales(n + " " + s) for n, s in zip(names, skus)]
-                    sales_df_copy.loc[missing_subcat, "Sub Category"] = [get_subcategory_name(c) for c in cats]
+                    if report_show_master:
+                        sales_df_copy.loc[missing_subcat, "Sub Category"] = [str(c).split(" - ")[0] if " - " in str(c) else str(c) for c in cats]
+                    else:
+                        sales_df_copy.loc[missing_subcat, "Sub Category"] = [get_subcategory_name(c) for c in cats]
                     
                 sales_qty = sales_df_copy.groupby("Sub Category")["qty"].sum().reset_index()
                 sales_qty.rename(columns={"Sub Category": "Sub-Category", "qty": "Total_Sold"}, inplace=True)
@@ -367,7 +362,10 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
                         skus = df_res.loc[missing, "sku"].fillna("").astype(str)
                         from BackEnd.core.categories import get_category_for_sales
                         cats = [get_category_for_sales(n + " " + s) for n, s in zip(names, skus)]
-                        df_res.loc[missing, "Sub Category"] = [get_subcategory_name(c) for c in cats]
+                        if report_show_master:
+                            df_res.loc[missing, "Sub Category"] = [str(c).split(" - ")[0] if " - " in str(c) else str(c) for c in cats]
+                        else:
+                            df_res.loc[missing, "Sub Category"] = [get_subcategory_name(c) for c in cats]
                     return df_res.groupby("Sub Category")["qty"].sum().reset_index()
 
                 if ret_items:
@@ -400,9 +398,15 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
                     report_df[col] = report_df[col].astype(int)
                 
             report_df["Total_Net_Sold"] = report_df["Total_Sold"] - report_df["Total_Returned"] - report_df["Total_Exchanged"]
+            report_df["Return %"] = ((report_df["Total_Returned"] / report_df["Total_Sold"].replace(0, 1)) * 100).round(1)
+            report_df["Exchange %"] = ((report_df["Total_Exchanged"] / report_df["Total_Sold"].replace(0, 1)) * 100).round(1)
             
-            cols_order = ["Sub-Category", "Total_Units", "Total_Sold", "Total_Net_Sold", "Total_Returned", "Total_Exchanged"]
+            cols_order = ["Sub-Category", "Total_Units", "Total_Sold", "Total_Net_Sold", "Total_Returned", "Return %", "Total_Exchanged", "Exchange %"]
             report_df = report_df[[c for c in cols_order if c in report_df.columns]]
+            
+            if report_show_master:
+                report_df = report_df.rename(columns={"Sub-Category": "Category"})
+                cols_order[0] = "Category"
 
             tot_sold = int(report_df["Total_Sold"].sum())
             tot_returned = int(report_df["Total_Returned"].sum())
@@ -469,11 +473,11 @@ def render_deep_dive_tab(df_sales: pd.DataFrame, stock_df: pd.DataFrame, df_prev
             excel_data = buffer.getvalue()
             
             st.download_button(
-                label="📥 Download Sub-Category Report (Excel)",
+                label="📥 Download Category Report (Excel)",
                 data=excel_data,
-                file_name=f"Sub_Category_Report_{date.today().strftime('%Y%m%d')}.xlsx",
+                file_name=f"Category_Report_{date.today().strftime('%Y%m%d')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key=KeyManager.get_key("deep_dive", "dl_subcat_report"),
+                key=KeyManager.get_key("deep_dive", "dl_global_cat_report"),
                 use_container_width=True
             )
 

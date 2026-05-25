@@ -110,18 +110,6 @@ def _render_workspace_sidebar():
         st.divider()
 
         # ── Navigation ───────────────────────────────────────────────────────
-        st.markdown('<div class="sidebar-group-label">⚡ Navigation Hub</div>', unsafe_allow_html=True)
-
-        nav_map = {
-            "💎 Sales Overview": "💎 Sales Overview",
-            "📥 Sales Data Ingestion": "📥 Sales Data Ingestion",
-            "📦 Stock Insight": "📦 Stock Insight",
-            "👥 Customer Insight": "👥 Customer Insight",
-            "🔄 Returns Insights": "🔄 Returns Insights",
-            "📊 Traffic & Acquisition": "📊 Traffic & Acquisition",
-            "🛡️ Strategic Command": "🛡️ Strategic Command",
-        }
-
         if "active_section" not in st.session_state:
             st.session_state.active_section = "💎 Sales Overview"
 
@@ -131,27 +119,31 @@ def _render_workspace_sidebar():
         if st.session_state.active_section == "🔄 Returns & Net Sales":
             st.session_state.active_section = "🔄 Returns Insights"
 
-        reverse_map = {v: k for k, v in nav_map.items()}
-        current_label = reverse_map.get(st.session_state.active_section, "💎 Sales Overview")
-        labels = list(nav_map.keys())
-        try:
-            current_index = labels.index(current_label)
-        except ValueError:
-            current_index = 0
+        def _update_section(new_section):
+            if st.session_state.get("active_section") != new_section:
+                st.session_state.active_section = new_section
+                from FrontEnd.utils.state import garbage_collect_session_state
+                garbage_collect_session_state(clear_data=False)
 
-        def _on_nav_change():
-            from FrontEnd.utils.state import garbage_collect_session_state
-            garbage_collect_session_state(clear_data=False)
+        def page_sales_overview(): _update_section("💎 Sales Overview")
+        def page_sales_data_ingestion(): _update_section("📥 Sales Data Ingestion")
+        def page_stock_insight(): _update_section("📦 Stock Insight")
+        def page_customer_insight(): _update_section("👥 Customer Insight")
+        def page_returns_insights(): _update_section("🔄 Returns Insights")
+        def page_traffic_acquisition(): _update_section("📊 Traffic & Acquisition")
+        def page_strategic_command(): _update_section("🛡️ Strategic Command")
 
-        selection = st.radio(
-            "Navigation",
-            labels,
-            index=current_index,
-            key="main_nav",
-            label_visibility="collapsed",
-            on_change=_on_nav_change,
-        )
-        st.session_state.active_section = nav_map[selection]
+        pg = st.navigation({
+            "⚡ Navigation Hub": [
+                st.Page(page_sales_overview, title="Sales Overview", icon="💎", default=True, url_path="sales-overview"),
+                st.Page(page_sales_data_ingestion, title="Sales Data Ingestion", icon="📥", url_path="sales-ingestion"),
+                st.Page(page_stock_insight, title="Stock Insight", icon="📦", url_path="stock-insight"),
+                st.Page(page_customer_insight, title="Customer Insight", icon="👥", url_path="customer-insight"),
+                st.Page(page_returns_insights, title="Returns Insights", icon="🔄", url_path="returns-insights"),
+                st.Page(page_traffic_acquisition, title="Traffic & Acquisition", icon="📊", url_path="traffic"),
+                st.Page(page_strategic_command, title="Strategic Command", icon="🛡️", url_path="strategic-command"),
+            ]
+        })
 
         st.divider()
 
@@ -167,28 +159,6 @@ def _render_workspace_sidebar():
         auto_refresh = st.toggle("Auto-Refresh (15 min)", value=False, key="global_auto_refresh")
         if auto_refresh:
             st_autorefresh(interval=15 * 60 * 1000, key="global_refresh")
-
-        st.divider()
-
-        # ── AI Data Pilot (full-width expander — no popover) ─────────────────
-        st.markdown('<div class="sidebar-group-label">🤖 AI Assistant</div>', unsafe_allow_html=True)
-        dashboard_data = st.session_state.get("dashboard_data")
-        data_ready = dashboard_data and not dashboard_data.get("sales", pd.DataFrame()).empty
-
-        with st.expander("🚀 Data Pilot Chat", expanded=False):
-            if data_ready:
-                sales_df = dashboard_data.get("sales", pd.DataFrame())
-                returns_df = st.session_state.get("returns_data", pd.DataFrame())
-                stock_df = dashboard_data.get("stock", pd.DataFrame())
-                from FrontEnd.components.data_display import render_ai_pilot_chat_ui
-                render_ai_pilot_chat_ui(
-                    sales_df=sales_df,
-                    returns_df=returns_df,
-                    stock_df=stock_df,
-                    key_prefix="sidebar_global",
-                )
-            else:
-                st.info("Load dashboard data first, then return here to chat with the Pilot.")
 
         st.divider()
 
@@ -307,6 +277,8 @@ def _render_workspace_sidebar():
                     os.remove(STATE_FILE)
                 st.session_state.clear()
                 st.rerun()
+                
+        return pg
 
 
 def _render_system_logs():
@@ -372,13 +344,35 @@ def _render_primary_navigation():
     except Exception as e:
         st.error(f"Failed to load dashboard: {e}")
 
+def _render_global_chat():
+    """Renders a full-width AI Data Pilot chat expander at the bottom of the main screen."""
+    dashboard_data = st.session_state.get("dashboard_data")
+    data_ready = dashboard_data and not dashboard_data.get("sales", pd.DataFrame()).empty
+    
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    with st.expander("🤖 Open Data Pilot (Global AI Assistant)", expanded=False):
+        if data_ready:
+            sales_df = dashboard_data.get("sales", pd.DataFrame())
+            returns_df = st.session_state.get("returns_data", pd.DataFrame())
+            stock_df = dashboard_data.get("stock", pd.DataFrame())
+            from FrontEnd.components.data_display import render_ai_pilot_chat_ui
+            render_ai_pilot_chat_ui(
+                sales_df=sales_df,
+                returns_df=returns_df,
+                stock_df=stock_df,
+                key_prefix="global_main_chat",
+            )
+        else:
+            st.info("Load dashboard data first, then return here to chat with the Pilot.")
 
 def run_app():
     init_state()
     ui.setup_theme()
-    _render_workspace_sidebar()
+    pg = _render_workspace_sidebar()
+    pg.run()
     ui.page_header()
     _render_primary_navigation()
+    _render_global_chat()
     ui.page_footer()
 
 
