@@ -62,6 +62,22 @@ def setup_theme():
             }
         }
 
+        /* ── Dialog / Modal Customization ───────────────────────────────── */
+        [data-testid="stDialog"] {
+            border-radius: 24px !important;
+            background: var(--surface) !important;
+            border: 1px solid rgba(var(--primary-rgb), 0.2) !important;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.3) !important;
+            padding: 16px !important;
+        }
+        
+        [data-testid="stDialog"] h2 {
+            font-weight: 800 !important;
+            color: var(--on-surface) !important;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border-soft);
+        }
+
         /* ── Base ───────────────────────────────────────────────────────── */
         html, body, [class*="css"] {
             font-family: 'Inter', sans-serif !important;
@@ -855,16 +871,16 @@ def sidebar_branding():
     """Elegant sidebar branding to save main screen space."""
     logo_src = "https://logo.clearbit.com/deencommerce.com"
     try:
-        import base64
         import os
 
         logo_jpg = os.path.join("assets", "deen_logo.jpg")
         if os.path.exists(logo_jpg):
-            with open(logo_jpg, "rb") as f:
-                b64 = base64.b64encode(f.read()).decode()
-            logo_src = f"data:image/jpeg;base64,{b64}"
+            logo_src = logo_jpg  # st.logo natively handles local paths
     except:
         pass
+        
+    # Apply the native Streamlit logo (shows at the top of the sidebar)
+    st.logo(logo_src, icon_image=logo_src)
 
     # Add Last Synced info if available
     sync_html = ""

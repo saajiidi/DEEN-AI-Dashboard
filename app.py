@@ -50,6 +50,22 @@ def _clear_error_logs():
         os.remove(ERROR_LOG_FILE)
 
 
+@st.dialog("⚠️ Confirm System Reset")
+def _confirm_reset():
+    st.write("Are you sure you want to completely reset the system? This will clear all cached data and session state.")
+    if st.button("Yes, Reset System", type="primary", use_container_width=True, icon="🚨"):
+        from FrontEnd.utils.state import STATE_FILE
+        if os.path.exists(STATE_FILE):
+            try:
+                os.remove(STATE_FILE)
+            except Exception:
+                pass
+        st.session_state.clear()
+        st.rerun()
+    if st.button("Cancel", use_container_width=True, icon="❌"):
+        st.rerun()
+
+
 def _render_workspace_sidebar():
     with st.sidebar:
         ui.sidebar_branding()
@@ -154,7 +170,7 @@ def _render_workspace_sidebar():
             from FrontEnd.utils.state import garbage_collect_session_state
             garbage_collect_session_state(clear_data=True)
 
-        st.button("� Sync Operations", type="primary", use_container_width=True, on_click=_trigger_sync)
+        st.button("Sync Operations", icon="🔄", type="primary", use_container_width=True, on_click=_trigger_sync)
 
         auto_refresh = st.toggle("Auto-Refresh (15 min)", value=False, key="global_auto_refresh")
         if auto_refresh:
@@ -207,7 +223,7 @@ def _render_workspace_sidebar():
         st.divider()
 
         # ── Exports (collapsed by default) ───────────────────────────────────
-        with st.expander("📤 Exports & Reports", expanded=False):
+        with st.popover("📤 Exports & Reports", use_container_width=True):
             if "dashboard_data" in st.session_state:
                 st.markdown("**🔌 Power BI Connector**")
                 st.caption("Generates a Star Schema (Facts & Dimensions) for DAX modeling.")
@@ -235,7 +251,7 @@ def _render_workspace_sidebar():
                         from FrontEnd.utils.state import garbage_collect_session_state
                         garbage_collect_session_state(clear_data=False)
 
-                    st.button("🔄 Clear Schema Cache", use_container_width=True, on_click=_clear_pbi_cache)
+                    st.button("Clear Schema Cache", icon="🔄", use_container_width=True, on_click=_clear_pbi_cache)
 
                 st.divider()
                 sales_export_df = st.session_state.dashboard_data.get("sales", pd.DataFrame())
@@ -252,10 +268,10 @@ def _render_workspace_sidebar():
                 st.caption("Load dashboard data to enable exports.")
 
         # ── Admin / System Utils (low-frequency, collapsed) ──────────────────
-        with st.expander("🛠️ System Admin", expanded=False):
+        with st.popover("🛠️ System Admin", use_container_width=True):
             st.caption("Low-frequency system operations. Use with care.")
 
-            if st.button("🧹 Clear Embedding Cache", use_container_width=True, help="Free up memory and refresh the AI context"):
+            if st.button("Clear Embedding Cache", icon="🧹", use_container_width=True, help="Free up memory and refresh the AI context"):
                 from pathlib import Path
                 cache_file = Path("BackEnd/cache/embedding_cache.parquet")
                 try:
@@ -271,12 +287,8 @@ def _render_workspace_sidebar():
 
             st.markdown("---")
             st.markdown("**⚠️ Danger Zone**")
-            if st.button("Full System Reset", use_container_width=True, type="secondary"):
-                from FrontEnd.utils.state import STATE_FILE
-                if os.path.exists(STATE_FILE):
-                    os.remove(STATE_FILE)
-                st.session_state.clear()
-                st.rerun()
+            if st.button("Full System Reset", use_container_width=True, type="secondary", icon="🧨"):
+                _confirm_reset()
                 
         return pg
 

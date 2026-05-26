@@ -212,6 +212,8 @@ def render_ai_pilot_chat_ui(sales_df: pd.DataFrame, returns_df: pd.DataFrame = N
                                     st.plotly_chart(local_vars["fig"], use_container_width=True)
                             except Exception as e:
                                 st.error(f"Could not render chart: {e}")
+                
+                st.feedback("thumbs", key=f"feedback_{len(st.session_state[chat_key])}")
         
         # Add assistant response to history
         st.session_state[chat_key].append({"role": "assistant", "content": response})

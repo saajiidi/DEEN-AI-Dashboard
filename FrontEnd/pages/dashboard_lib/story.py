@@ -179,7 +179,7 @@ def render_dashboard_story(df_sales: pd.DataFrame, df_customers: pd.DataFrame, m
             
             with ic2:
                 if not at_risk_vips.empty:
-                    if st.button("👥", key=KeyManager.get_key("story", "vip_churn_btn"), help="View At-Risk VIPs"):
+                    if st.button("View At-Risk VIPs", icon="👥", key=KeyManager.get_key("story", "vip_churn_btn"), help="View At-Risk VIPs"):
                         st.session_state[KeyManager.get_key("story", "show_vip_churn")] = not st.session_state.get(KeyManager.get_key("story", "show_vip_churn"), False)
 
             # VIP Churn Rescue View

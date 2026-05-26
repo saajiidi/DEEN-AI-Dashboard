@@ -176,9 +176,10 @@ def render_ml_forecast_charts(daily: pd.DataFrame, ml_bundle: dict = None):
     st.markdown("#### 🤖 Predictive Market Forecasting Ensembles")
     
     # Interactive Adjustments
-    st.sidebar.markdown("### 🎛️ Forecast Settings")
-    growth_assumption = st.sidebar.slider("Growth Rate Assumption (%)", -10, 10, 0)
-    st.sidebar.selectbox("Seasonality Override", ["Auto", "Weekly", "Monthly"])
+    with st.sidebar.popover("🎛️ Forecast Settings", use_container_width=True):
+        st.markdown("**Model Parameters**")
+        growth_assumption = st.slider("Growth Rate Assumption (%)", -10, 10, 0)
+        st.selectbox("Seasonality Override", ["Auto", "Weekly", "Monthly"])
 
     # Check if we already have pre-calculated forecasts in the bundle (Snapshot Mode)
     use_precalculated = False

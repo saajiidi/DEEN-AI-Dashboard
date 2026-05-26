@@ -13,7 +13,7 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, d
     with c1:
         st.subheader("📦 Stock Insight")
     with c2:
-        if st.button("🔄 Sync Products & Stock", use_container_width=True, key=KeyManager.get_key("inventory", "sync_btn"), help="Fetch latest published products, SKUs, and inventory counts."):
+        if st.button("Sync Products & Stock", icon="🔄", use_container_width=True, key=KeyManager.get_key("inventory", "sync_btn"), help="Fetch latest published products, SKUs, and inventory counts."):
             with st.spinner("Fetching latest product catalog and stock data..."):
                 from BackEnd.services.hybrid_data_loader import refresh_woocommerce_stock_cache
                 
@@ -223,13 +223,14 @@ def render_inventory_health(stock_df: pd.DataFrame, forecast_df: pd.DataFrame, d
         # 2. Controls for dynamic visualization
         ctrl_col1, ctrl_col2 = st.columns([3, 1])
         with ctrl_col1:
-            group_basis = st.radio(
+            group_basis = st.segmented_control(
                 "Aggregation Level",
                 ["Main Category", "Sub-Category", "Master Product", "Variant"],
-                index=1,
-                horizontal=True,
+                default="Sub-Category",
                 key=KeyManager.get_key("inventory", "group_basis")
             )
+            if not group_basis:
+                group_basis = "Sub-Category"
         with ctrl_col2:
             use_sale_price = st.toggle("Graph: Use Sale Price", value=False, key=KeyManager.get_key("inventory", "use_sale_price_graph"))
         
@@ -578,7 +579,7 @@ def _render_stock_timeline(inventory_df: pd.DataFrame, sales_df: pd.DataFrame, r
     )
     snapshot_ts = pd.to_datetime(snapshot_date)
 
-    if st.button("Show Stock on Selected Date", key=KeyManager.get_key("inventory", "show_snapshot_btn"), type="primary"):
+    if st.button("Show Stock on Selected Date", icon="📅", key=KeyManager.get_key("inventory", "show_snapshot_btn"), type="primary"):
         with st.spinner(f"Reconstructing stock levels for {snapshot_date.strftime('%Y-%m-%d')}..."):
             current_stock = inventory_df.set_index('SKU')['Stock Quantity'].to_dict()
 
